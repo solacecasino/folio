@@ -1,6 +1,10 @@
 # Classic double-spaced manuscript format.
 name = "Manuscript"
 
+[page]
+# Header and footer use the formatting language (docs/customizing.md).
+header = "%file% / %page%"
+
 [colors]
 background = "#4a4640"
 page = "#ffffff"

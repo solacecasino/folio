@@ -63,7 +63,12 @@ pub struct Editor {
     pub page_count: usize,
     /// Goes up on every change, so others can tell the document changed.
     pub revision: u64,
+    /// Page the caret is on, counting from 1.
+    pub caret_page: usize,
 }
+
+/// Text for a page's header and footer: (page, pages) → (header, footer).
+pub type PageText<'a> = &'a dyn Fn(usize, usize) -> (String, String);
 
 impl Editor {
     pub fn new(doc: Document) -> Self {
@@ -83,6 +88,7 @@ impl Editor {
             dirty: false,
             page_count: 1,
             revision: 0,
+            caret_page: 1,
         }
     }
 
@@ -205,6 +211,20 @@ impl Editor {
         self.doc = doc;
         self.cursor = self.doc.clamp(self.cursor);
         self.anchor = self.cursor;
+    }
+
+    /// Moves the caret to the start of a paragraph and scrolls to it.
+    pub fn goto(&mut self, para: usize) {
+        self.set_cursor(Pos::new(para, 0), false);
+        self.goal_x = None;
+    }
+
+    pub fn cursor(&self) -> Pos {
+        self.cursor
+    }
+
+    pub fn selected_text(&self) -> Option<String> {
+        self.selection().map(|(a, b)| self.doc.text(a, b))
     }
 
     pub fn select_all(&mut self) {
@@ -416,7 +436,7 @@ impl Editor {
 
     // ---- Frame ------------------------------------------------------------
 
-    pub fn show(&mut self, ui: &mut Ui, theme: &Theme, fonts: &FontMap) {
+    pub fn show(&mut self, ui: &mut Ui, theme: &Theme, fonts: &FontMap, page_text: PageText<'_>) {
         let bg = color(&theme.colors.background);
         ui.painter().rect_filled(ui.max_rect(), 0.0, bg);
 
@@ -435,7 +455,10 @@ impl Editor {
                 self.handle_keys(ui, &layout, theme);
                 // Edits change the layout, so lay out again before painting.
                 let layout = self.layout(ui, theme, fonts, ui.available_width().max(rect.width()));
+                let caret_y = self.caret_rect(&layout, self.cursor).center().y;
+                self.caret_page = layout.pages.iter().position(|p| caret_y <= p.bottom()).unwrap_or(0) + 1;
                 self.paint(ui, &layout, offset, theme);
+                self.paint_margins(ui, &layout, offset, theme, page_text);
             });
     }
 
@@ -594,6 +617,29 @@ impl Editor {
                 true
             }
             None => false,
+        }
+    }
+
+    /// Draws each visible page's header and footer in its top and bottom margins.
+    fn paint_margins(&self, ui: &Ui, layout: &Layout, offset: Vec2, theme: &Theme, page_text: PageText<'_>) {
+        if theme.page.header.is_none() && theme.page.footer.is_none() {
+            return;
+        }
+        let inch = DPI * self.zoom;
+        let font = FontId::proportional(9.0 * inch / 72.0);
+        let fg = color(&theme.colors.text).gamma_multiply(0.6);
+        let pages = layout.pages.len();
+        for (i, page) in layout.pages.iter().enumerate() {
+            let r = page.translate(offset);
+            if !r.intersects(ui.clip_rect()) {
+                continue;
+            }
+            let (header, footer) = page_text(i + 1, pages);
+            let painter = ui.painter();
+            let top = r.top() + theme.page.margin_top * inch / 2.0;
+            let bottom = r.bottom() - theme.page.margin_bottom * inch / 2.0;
+            painter.text(pos2(r.center().x, top), egui::Align2::CENTER_CENTER, header, font.clone(), fg);
+            painter.text(pos2(r.center().x, bottom), egui::Align2::CENTER_CENTER, footer, font.clone(), fg);
         }
     }
 

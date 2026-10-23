@@ -21,13 +21,22 @@ events = ["changed"]
 [[commands]]
 id = "goal"
 label = "Cycle Word Goal"
-keys = "Cmd+Shift+G"
+keys = "cmd+alt+g"
 
 [[commands]]
 id = "date"
 label = "Insert Today's Date"
-keys = "Cmd+Shift+D"
+keys = "cmd+alt+d"
 
 [[commands]]
 id = "stats"
 label = "Document Stats"
+
+# Panels it can fill. Place one by adding this to settings.toml:
+#   [[panels]]
+#   kind = "component"
+#   component = "Writing Tools"
+#   id = "goal"
+[[panels]]
+id = "goal"
+title = "Word Goal"

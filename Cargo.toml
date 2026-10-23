@@ -8,11 +8,13 @@ repository = "https://github.com/solacecasino/folio"
 
 [dependencies]
 eframe = "0.37.0"
+libc = "0.2"
 muda = "0.21.2"
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
+toml_edit = "0.25"
 
 [profile.release]
 # Keep the shipped app small.

@@ -41,13 +41,22 @@ events = ["changed"]            # events to receive while running
 [[commands]]
 id = "goal"                     # sent back to you when chosen
 label = "Cycle Word Goal"       # menu text
-keys = "Cmd+Shift+G"            # optional shortcut
+keys = "cmd+alt+g"              # optional default shortcut (users can remap it in keys.toml)
+
+[[panels]]
+id = "goal"                     # panels you can fill with panel.set
+title = "Word Goal"
 ```
 
 - `start = "command"` starts the component the first time you pick one of its
   commands. `start = "launch"` starts it when Folio opens; use it only if the
   component needs events from the start.
 - When Folio quits it sends `shutdown`, then stops the program.
+- Users place your panels in their `settings.toml`
+  (`kind = "component"`, `component = "<name>"`, `id = "<panel id>"`). A
+  component whose panel is on screen is started automatically, after approval.
+- Users can bind your commands to their own keys in `keys.toml`:
+  `"cmd+k" = 'component "Writing Tools" goal'`.
 
 ### Permissions
 
@@ -76,7 +85,7 @@ Only components send requests. Folio sends notifications.
 
 | Method | Params | When |
 |---|---|---|
-| `initialize` | `folio` (version), `protocol` (currently `1`), `permissions` | Right after starting |
+| `initialize` | `folio` (version), `protocol` (currently `2`), `permissions` | Right after starting |
 | `command` | `command`: the command `id` | You picked one of its commands |
 | `event` | `kind` plus the fields below | Something happened, if listed in `events` |
 | `shutdown` | | Folio is quitting; exit soon |
@@ -85,7 +94,7 @@ Events:
 
 | `kind` | Fields | Notes |
 |---|---|---|
-| `changed` | `words`, `paragraphs` | At most about 3 times a second while typing |
+| `changed` | `words`, `paragraphs` | Right after starting, then at most about 3 times a second while typing |
 | `saved` | `path` | |
 | `opened` | `path` | |
 
@@ -99,6 +108,7 @@ Events:
 | `doc.replace` | `paragraphs` | `null`. Replaces the whole document | `document.edit` |
 | `status.set` | `text` (string or `null`) | `null`. Shows text in the status line; `null` clears it | none |
 | `notify` | `text` | `null`. Shows a short message for a few seconds | none |
+| `panel.set` | `id`, `lines` | `null`. Fills one of your panels. Each line is a string, or `{ "text": ..., "command": ... }` for a clickable line that runs one of your commands | none |
 | `log` | `message` | Printed to Folio's stderr, for debugging | none |
 
 Edits from components are single undo steps, so `Cmd+Z` undoes them.
@@ -122,6 +132,12 @@ The same shape as a `.folio` file:
 
 `style` is a paragraph style name from the active theme. Runs can have `bold`,
 `italic` and `underline`.
+
+## Versions
+
+`initialize` says which protocol version Folio speaks. Version 2 added panels
+(`panel.set`, `[[panels]]`). New versions only add things, so a component
+written for version 1 keeps working.
 
 ## Example exchange
 

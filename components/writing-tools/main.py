@@ -42,6 +42,19 @@ def show_goal(words):
     text = None if goal is None else f"{words} / {goal} words"
     send({"method": "status.set", "params": {"text": text}})
 
+    if goal is None:
+        lines = ["No goal yet.", {"text": "Set a goal →", "command": "goal"}]
+    else:
+        done = min(words / goal, 1.0)
+        filled = round(done * 16)
+        lines = [
+            "█" * filled + "░" * (16 - filled) + f"  {round(done * 100)}%",
+            f"{words} of {goal} words",
+            "Goal reached!" if words >= goal else f"{goal - words} to go",
+            {"text": "Next goal →", "command": "goal"},
+        ]
+    send({"method": "panel.set", "params": {"id": "goal", "lines": lines}})
+
 
 def plural(n, word):
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
@@ -56,7 +69,9 @@ def handle(message):
     method = message.get("method")
     params = message.get("params", {})
 
-    if method == "command":
+    if method == "initialize":
+        show_goal(0)
+    elif method == "command":
         command = params["command"]
         if command == "goal":
             goal = GOALS[(GOALS.index(goal) + 1) % len(GOALS)]
@@ -75,8 +90,7 @@ def handle(message):
                 f"{plural(words, 'word')}, about {minutes} min to read"
             )
     elif method == "event" and params.get("kind") == "changed":
-        if goal is not None:
-            show_goal(params["words"])
+        show_goal(params["words"])
     elif method == "shutdown":
         sys.exit(0)
 

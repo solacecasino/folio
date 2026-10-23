@@ -20,7 +20,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 pub const READ: &str = "document.read";
 pub const EDIT: &str = "document.edit";
@@ -46,6 +46,22 @@ pub struct Manifest {
     pub events: Vec<String>,
     #[serde(default)]
     pub commands: Vec<CommandSpec>,
+    /// Panels this component can fill; users place them in settings.toml.
+    #[serde(default)]
+    pub panels: Vec<PanelDecl>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PanelDecl {
+    pub id: String,
+    pub title: String,
+}
+
+/// One line of a component panel. Lines with a command are clickable.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PanelLine {
+    pub text: String,
+    pub command: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -94,6 +110,11 @@ pub struct Component {
     generation: u64,
     /// Text the component shows in the status line.
     pub status: Option<String>,
+    /// Panel contents by panel id.
+    pub panels: BTreeMap<String, Vec<PanelLine>>,
+    /// Set when the user said no or it failed to start, so Folio doesn't
+    /// keep asking every frame a panel wants it.
+    blocked: bool,
 }
 
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -106,6 +127,8 @@ pub struct Host {
     waker: Waker,
     approver: Approver,
     launched: bool,
+    /// Set when a component starts, so the app can send it the current state.
+    pub just_started: bool,
 }
 
 impl Host {
@@ -120,7 +143,21 @@ impl Host {
             waker,
             approver,
             launched: false,
+            just_started: false,
         }
+    }
+
+    pub fn index_of(&self, name: &str) -> Option<usize> {
+        self.components.iter().position(|c| c.manifest.name == name)
+    }
+
+    /// Starts a component whose panel is on screen. Asks for approval once;
+    /// after a "no" it stays stopped until Folio restarts.
+    pub fn ensure_running(&mut self, i: usize) -> Result<(), String> {
+        if self.components[i].running.is_some() || self.components[i].blocked {
+            return Ok(());
+        }
+        self.start(i).inspect_err(|_| self.components[i].blocked = true)
     }
 
     pub fn has_permission(&self, i: usize, permission: &str) -> bool {
@@ -169,6 +206,7 @@ impl Host {
         });
 
         let permissions = c.manifest.permissions.clone();
+        self.just_started = true;
         self.send(
             i,
             json!({
@@ -191,10 +229,13 @@ impl Host {
         }
     }
 
-    /// Runs one of a component's menu commands, starting it if needed.
-    pub fn run_command(&mut self, i: usize, command: usize) -> Result<(), String> {
+    /// Runs a component's command by name and id, starting it if needed.
+    pub fn run_command(&mut self, name: &str, id: &str) -> Result<(), String> {
+        let i = self
+            .index_of(name)
+            .ok_or_else(|| format!("no component named \"{name}\" is installed"))?;
+        self.components[i].blocked = false;
         self.start(i)?;
-        let id = self.components[i].manifest.commands[command].id.clone();
         self.send(i, json!({ "method": "command", "params": { "command": id } }));
         Ok(())
     }
@@ -247,6 +288,7 @@ impl Host {
                         let _ = r.child.wait();
                     }
                     c.status = None;
+                    c.panels.clear();
                 }
                 Incoming::Line(line) => {
                     let message: Value = match serde_json::from_str(&line) {
@@ -266,6 +308,18 @@ impl Host {
                         "status.set" => {
                             let c = &mut self.components[i];
                             c.status = params.get("text").and_then(Value::as_str).map(str::to_owned);
+                            if let Some(id) = id {
+                                self.reply(i, id, Ok(Value::Null));
+                            }
+                        }
+                        "panel.set" => {
+                            let panel = params.get("id").and_then(Value::as_str).unwrap_or_default().to_owned();
+                            let lines = params
+                                .get("lines")
+                                .and_then(Value::as_array)
+                                .map(|lines| lines.iter().map(panel_line).collect())
+                                .unwrap_or_default();
+                            self.components[i].panels.insert(panel, lines);
                             if let Some(id) = id {
                                 self.reply(i, id, Ok(Value::Null));
                             }
@@ -308,17 +362,24 @@ impl Drop for Host {
     }
 }
 
-// ---- Discovery --------------------------------------------------------------
-
-fn support_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Folio"))
+/// A panel line is either a string or `{ "text": ..., "command": ... }`.
+fn panel_line(v: &Value) -> PanelLine {
+    match v {
+        Value::String(text) => PanelLine {
+            text: text.clone(),
+            command: None,
+        },
+        _ => PanelLine {
+            text: v.get("text").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            command: v.get("command").and_then(Value::as_str).map(str::to_owned),
+        },
+    }
 }
 
+// ---- Discovery --------------------------------------------------------------
+
 pub fn discover() -> Vec<Component> {
-    let mut dirs = vec![PathBuf::from("components")];
-    if let Some(support) = support_dir() {
-        dirs.push(support.join("components"));
-    }
+    let dirs = [PathBuf::from("components"), crate::settings::config_dir().join("components")];
 
     let mut found: Vec<Component> = Vec::new();
     for dir in dirs {
@@ -336,6 +397,8 @@ pub fn discover() -> Vec<Component> {
                         running: None,
                         generation: 0,
                         status: None,
+                        panels: BTreeMap::new(),
+                        blocked: false,
                     });
                 }
                 Err(e) => eprintln!("folio: skipping component {}: {e}", folder.display()),
@@ -369,7 +432,7 @@ pub fn describe(permission: &str) -> String {
 }
 
 fn approvals_path() -> Option<PathBuf> {
-    support_dir().map(|d| d.join("approvals.json"))
+    Some(crate::settings::config_dir().join("approvals.json"))
 }
 
 fn load_approvals() -> BTreeMap<String, Vec<String>> {
@@ -439,24 +502,30 @@ mod tests {
         assert_eq!(components.len(), 1, "sample component is in ./components");
 
         let mut host = Host::new(components, Arc::new(|| {}), Box::new(|_| true));
-        let date = host.components[0].manifest.commands.iter().position(|c| c.id == "date").unwrap();
-        host.run_command(0, date).unwrap();
+        host.run_command("Writing Tools", "date").unwrap();
 
         let call = wait_for(&mut host, |c| c.method == "doc.insert");
         assert!(call.params["text"].as_str().unwrap().len() >= 8);
         host.reply(0, call.id.unwrap(), Ok(Value::Null));
 
         // The goal command answers through the status line, which the host handles itself.
-        let goal = host.components[0].manifest.commands.iter().position(|c| c.id == "goal").unwrap();
-        host.run_command(0, goal).unwrap();
+        host.run_command("Writing Tools", "goal").unwrap();
         let call = wait_for(&mut host, |c| c.method == "doc.text");
         host.reply(0, call.id.unwrap(), Ok(json!({ "text": "one two three" })));
         let deadline = Instant::now() + Duration::from_secs(5);
-        while host.components[0].status.is_none() && Instant::now() < deadline {
+        let has_progress = |h: &Host| {
+            h.components[0].panels.get("goal").is_some_and(|p| p.iter().any(|l| l.text.contains("3 of")))
+        };
+        while !(host.components[0].status.is_some() && has_progress(&host)) && Instant::now() < deadline {
             host.poll();
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(host.components[0].status.as_deref(), Some("3 / 250 words"));
+
+        // Its panel shows progress, with a clickable line that runs a command.
+        let panel = &host.components[0].panels["goal"];
+        assert!(panel.iter().any(|l| l.text.contains("3 of 250")), "{panel:?}");
+        assert!(panel.iter().any(|l| l.command.as_deref() == Some("goal")));
     }
 
     fn wait_for(host: &mut Host, pred: impl Fn(&Call) -> bool) -> Call {

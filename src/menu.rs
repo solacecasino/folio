@@ -1,10 +1,13 @@
-//! The native macOS menu bar.
+//! The native macOS menu bar, built from the keymap so it always shows the
+//! user's own shortcuts. It's rebuilt whenever keys, the theme or components
+//! change.
 //!
 //! Menu shortcuts are taken by macOS before the window sees the key press, so
-//! every item here maps to a [`Command`] the app runs itself. Copy, cut and
-//! paste are left out on purpose: those keys go straight to the editor.
+//! every item maps to a [`Command`] the app runs itself. Copy, cut and paste
+//! are left out on purpose: those keys go straight to the editor.
 
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui;
 use muda::{
@@ -12,69 +15,45 @@ use muda::{
     accelerator::Accelerator,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Command {
-    New,
-    Open,
-    Save,
-    SaveAs,
-    Quit,
-    Undo,
-    Redo,
-    SelectAll,
-    Bold,
-    Italic,
-    Underline,
-    NextTheme,
-    ZoomIn,
-    ZoomOut,
-    ZoomReset,
-    ToggleStatus,
-    Help,
-    /// A component's command: (component, command) indexes.
-    Component(usize, usize),
-}
+use crate::keys::{Builtin, Command, Keymap};
 
-/// A component's commands, as they appear in the Components menu.
-pub struct ComponentMenu {
-    pub name: String,
-    /// (label, shortcut) for each command, in order.
-    pub items: Vec<(String, Option<String>)>,
+/// What goes in the menus besides the built-in commands.
+pub struct MenuContent<'a> {
+    /// Paragraph styles of the current theme, in order.
+    pub styles: Vec<String>,
+    /// (component name, [(command id, label)])
+    pub components: Vec<(String, Vec<(String, String)>)>,
+    pub keymap: &'a Keymap,
 }
-
-const ITEMS: &[(Command, &str, &str)] = &[
-    (Command::New, "New", "Cmd+N"),
-    (Command::Open, "Open…", "Cmd+O"),
-    (Command::Save, "Save", "Cmd+S"),
-    (Command::SaveAs, "Save As…", "Cmd+Shift+S"),
-    (Command::Quit, "Quit Folio", "Cmd+Q"),
-    (Command::Undo, "Undo", "Cmd+Z"),
-    (Command::Redo, "Redo", "Cmd+Shift+Z"),
-    (Command::SelectAll, "Select All", "Cmd+A"),
-    (Command::Bold, "Bold", "Cmd+B"),
-    (Command::Italic, "Italic", "Cmd+I"),
-    (Command::Underline, "Underline", "Cmd+U"),
-    (Command::NextTheme, "Next Theme", "Cmd+T"),
-    (Command::ZoomIn, "Zoom In", "Cmd+="),
-    (Command::ZoomOut, "Zoom Out", "Cmd+-"),
-    // Cmd+0 belongs to paragraph styles, so this one has no shortcut.
-    (Command::ZoomReset, "Actual Size", ""),
-    (Command::ToggleStatus, "Show Status Line", "Cmd+."),
-    (Command::Help, "Keyboard Shortcuts", "Cmd+/"),
-];
 
 pub struct MenuBar {
     // Dropping the menu removes it from the menu bar, so keep it alive.
     _menu: Menu,
-    events: Receiver<Command>,
+    /// Menu item ids are indexes into this list.
+    commands: Vec<Command>,
+    events: Receiver<String>,
 }
 
+// muda allows one event handler per process, so it forwards ids to whichever
+// menu is current through this sender.
+static EVENTS: Mutex<Option<Sender<String>>> = Mutex::new(None);
+
 impl MenuBar {
-    pub fn install(ctx: &egui::Context, icon: &egui::IconData, components: &[ComponentMenu]) -> Self {
-        let item = |cmd: Command| {
-            let (_, label, keys) = ITEMS.iter().find(|(c, ..)| *c == cmd).expect("command listed");
-            let accel: Option<Accelerator> = keys.parse().ok();
-            MenuItem::with_id(format!("{cmd:?}"), label, true, accel)
+    pub fn install(ctx: &egui::Context, icon: &egui::IconData, content: &MenuContent<'_>) -> Self {
+        let mut commands: Vec<Command> = Vec::new();
+        let mut item = |command: Command, label: &str| {
+            let accel = content
+                .keymap
+                .chord_for(&command)
+                .and_then(|c| c.accelerator().parse::<Accelerator>().ok());
+            let id = format!("m{}", commands.len());
+            commands.push(command);
+            MenuItem::with_id(id, label, true, accel)
+        };
+        let builtin = |item: &mut dyn FnMut(Command, &str) -> MenuItem, b: Builtin| {
+            let command = Command::Builtin(b);
+            let label = command.label();
+            item(command, &label)
         };
         let sep = PredefinedMenuItem::separator;
 
@@ -84,53 +63,81 @@ impl MenuBar {
             &[
                 &PredefinedMenuItem::about(Some("About Folio"), Some(about(icon))),
                 &sep(),
+                &builtin(&mut item, Builtin::OpenConfigFolder),
+                &builtin(&mut item, Builtin::ReloadConfig),
+                &sep(),
                 &PredefinedMenuItem::hide(None),
                 &PredefinedMenuItem::hide_others(None),
                 &PredefinedMenuItem::show_all(None),
                 &sep(),
-                &item(Command::Quit),
+                &builtin(&mut item, Builtin::Quit),
             ],
         );
         let file = Submenu::with_items(
             "File",
             true,
             &[
-                &item(Command::New),
-                &item(Command::Open),
+                &builtin(&mut item, Builtin::New),
+                &builtin(&mut item, Builtin::Open),
                 &sep(),
-                &item(Command::Save),
-                &item(Command::SaveAs),
+                &builtin(&mut item, Builtin::Save),
+                &builtin(&mut item, Builtin::SaveAs),
             ],
         );
         let edit = Submenu::with_items(
             "Edit",
             true,
             &[
-                &item(Command::Undo),
-                &item(Command::Redo),
+                &builtin(&mut item, Builtin::Undo),
+                &builtin(&mut item, Builtin::Redo),
                 &sep(),
-                &item(Command::SelectAll),
+                &builtin(&mut item, Builtin::SelectAll),
             ],
         );
         let format = Submenu::with_items(
             "Format",
             true,
-            &[&item(Command::Bold), &item(Command::Italic), &item(Command::Underline)],
-        );
+            &[
+                &builtin(&mut item, Builtin::Bold),
+                &builtin(&mut item, Builtin::Italic),
+                &builtin(&mut item, Builtin::Underline),
+                &sep(),
+            ],
+        )
+        .expect("menu builds");
+        for style in &content.styles {
+            format.append(&item(Command::Style(style.clone()), style)).expect("menu builds");
+        }
         let view = Submenu::with_items(
             "View",
             true,
             &[
-                &item(Command::NextTheme),
+                &builtin(&mut item, Builtin::NextTheme),
                 &sep(),
-                &item(Command::ZoomIn),
-                &item(Command::ZoomOut),
-                &item(Command::ZoomReset),
+                &builtin(&mut item, Builtin::ZoomIn),
+                &builtin(&mut item, Builtin::ZoomOut),
+                &builtin(&mut item, Builtin::ZoomReset),
                 &sep(),
-                &item(Command::ToggleStatus),
-                &item(Command::Help),
+                &builtin(&mut item, Builtin::ToggleStatus),
+                &builtin(&mut item, Builtin::TogglePanels),
+                &builtin(&mut item, Builtin::Help),
             ],
         );
+
+        // Bare by default: this menu only exists once a component is installed.
+        let components = (!content.components.is_empty()).then(|| {
+            let list = Submenu::new("Components", true);
+            for (name, cmds) in &content.components {
+                let sub = Submenu::new(name, true);
+                for (id, label) in cmds {
+                    sub.append(&item(Command::Component(name.clone(), id.clone()), label))
+                        .expect("menu builds");
+                }
+                list.append(&sub).expect("menu builds");
+            }
+            list
+        });
+
         let window = Submenu::with_items(
             "Window",
             true,
@@ -139,47 +146,45 @@ impl MenuBar {
         .expect("menu builds");
 
         let menu = Menu::new();
-        for sub in [app, file, edit, format, view] {
+        for sub in [app, file, edit] {
             menu.append(&sub.expect("menu builds")).expect("menu builds");
         }
-        // Bare by default: the menu only exists once a component is installed.
-        if !components.is_empty() {
-            let list = Submenu::new("Components", true);
-            for (i, c) in components.iter().enumerate() {
-                let sub = Submenu::new(&c.name, true);
-                for (j, (label, keys)) in c.items.iter().enumerate() {
-                    let accel = keys.as_deref().and_then(|k| k.parse::<Accelerator>().ok());
-                    sub.append(&MenuItem::with_id(format!("component:{i}:{j}"), label, true, accel))
-                        .expect("menu builds");
-                }
-                list.append(&sub).expect("menu builds");
-            }
-            menu.append(&list).expect("menu builds");
+        menu.append(&format).expect("menu builds");
+        menu.append(&view.expect("menu builds")).expect("menu builds");
+        if let Some(components) = &components {
+            menu.append(components).expect("menu builds");
         }
         menu.append(&window).expect("menu builds");
         menu.init_for_nsapp();
         window.set_as_windows_menu_for_nsapp();
 
         let (tx, events) = channel();
-        let ctx = ctx.clone();
-        MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-            let id = event.id.0.as_str();
-            let cmd = match id.strip_prefix("component:").and_then(|rest| rest.split_once(':')) {
-                Some((i, j)) => i.parse().ok().zip(j.parse().ok()).map(|(i, j)| Command::Component(i, j)),
-                None => ITEMS.iter().find(|(c, ..)| format!("{c:?}") == id).map(|(c, ..)| *c),
-            };
-            if let Some(cmd) = cmd {
-                let _ = tx.send(cmd);
+        let mut slot = EVENTS.lock().expect("menu lock");
+        if slot.is_none() {
+            let ctx = ctx.clone();
+            MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+                if let Some(tx) = EVENTS.lock().expect("menu lock").as_ref() {
+                    let _ = tx.send(event.id.0);
+                }
                 // The app may be idle; wake it so the command runs right away.
                 ctx.request_repaint();
-            }
-        }));
+            }));
+        }
+        *slot = Some(tx);
 
-        Self { _menu: menu, events }
+        Self {
+            _menu: menu,
+            commands,
+            events,
+        }
     }
 
     pub fn poll(&self) -> Vec<Command> {
-        self.events.try_iter().collect()
+        self.events
+            .try_iter()
+            .filter_map(|id| id.strip_prefix('m')?.parse::<usize>().ok())
+            .filter_map(|i| self.commands.get(i).cloned())
+            .collect()
     }
 }
 

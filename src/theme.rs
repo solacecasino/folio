@@ -40,6 +40,10 @@ pub struct PageSetup {
     pub margin_right: f32,
     /// Gap between pages on screen.
     pub gap: f32,
+    /// Text in the top and bottom margins, in the formatting language,
+    /// e.g. `footer = "%page% / %pages%"`.
+    pub header: Option<String>,
+    pub footer: Option<String>,
 }
 
 impl Default for PageSetup {
@@ -52,6 +56,8 @@ impl Default for PageSetup {
             margin_left: 1.0,
             margin_right: 1.0,
             gap: 0.3,
+            header: None,
+            footer: None,
         }
     }
 }
@@ -66,6 +72,9 @@ pub struct Colors {
     pub cursor: String,
     pub selection: String,
     pub status: String,
+    /// Panel background and text; default to `background` and `status`.
+    pub panel: Option<String>,
+    pub panel_text: Option<String>,
 }
 
 impl Default for Colors {
@@ -78,6 +87,8 @@ impl Default for Colors {
             cursor: "#1e1e1e".into(),
             selection: "#3d7eff55".into(),
             status: "#b0b0b0".into(),
+            panel: None,
+            panel_text: None,
         }
     }
 }
@@ -122,6 +133,9 @@ pub struct Style {
     pub next: Option<String>,
     /// Cmd+<digit> applies this style.
     pub key: Option<u8>,
+    /// Level in the outline panel (1 = top). 0 leaves it out. Defaults to 1
+    /// for `title` and `h1`, 2 for `h2`, 3 for `h3`.
+    pub outline: Option<u8>,
 }
 
 impl Default for Style {
@@ -139,6 +153,7 @@ impl Default for Style {
             align: Align::Left,
             next: None,
             key: None,
+            outline: None,
         }
     }
 }
@@ -159,11 +174,22 @@ impl Theme {
             .unwrap_or_else(|| name.to_owned())
     }
 
-    pub fn style_for_key(&self, digit: u8) -> Option<&str> {
+    /// (keys, style) for every style with a `key`, e.g. ("cmd+1", "h1").
+    pub fn style_keys(&self) -> impl Iterator<Item = (String, String)> + '_ {
         self.styles
             .iter()
-            .find(|(_, s)| s.key == Some(digit))
-            .map(|(n, _)| n.as_str())
+            .filter_map(|(name, s)| Some((format!("cmd+{}", s.key?), name.clone())))
+    }
+
+    /// Outline level for a paragraph style, or None if it isn't a heading.
+    pub fn outline_level(&self, name: &str) -> Option<u8> {
+        let level = self.styles.get(name).and_then(|s| s.outline).or(match name {
+            "title" | "h1" => Some(1),
+            "h2" => Some(2),
+            "h3" => Some(3),
+            _ => None,
+        })?;
+        (level > 0).then_some(level)
     }
 
     fn resolve_path(&self, p: &str) -> PathBuf {
@@ -185,7 +211,7 @@ impl Theme {
 pub const DEFAULT_THEME: &str = include_str!("../themes/paper.toml");
 
 pub fn load_themes() -> Vec<Theme> {
-    let mut dirs = Vec::new();
+    let mut dirs: Vec<PathBuf> = Vec::new();
     // Inside Folio.app the bundled themes live in Contents/Resources.
     if let Ok(exe) = std::env::current_exe()
         && let Some(macos_dir) = exe.parent()
@@ -193,9 +219,7 @@ pub fn load_themes() -> Vec<Theme> {
         dirs.push(macos_dir.join("../Resources/themes"));
     }
     dirs.push(PathBuf::from("themes"));
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(PathBuf::from(home).join("Library/Application Support/Folio/themes"));
-    }
+    dirs.push(crate::settings::config_dir().join("themes"));
 
     let mut themes: Vec<Theme> = Vec::new();
     for dir in dirs {

@@ -14,7 +14,10 @@ of [foobar2000](https://www.foobar2000.org/).
 
 - **Real pages:** page size, margins and pagination, like a word processor
 - **Rich text:** bold, italic, underline and paragraph styles (title, headings, quote, …)
-- **Themes are files:** fonts, colors, page setup and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
+- **Themes are files:** fonts, colors, page setup, headers and footers, and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
+- **No settings window:** `settings.toml` and `keys.toml` control everything, reload live as you save them, and every shortcut is remappable
+- **A formatting language** for the status line, window title, page headers and footers, and panels: `%words% $plural(%words%,word)[ · %selection_words% selected]`
+- **Panels you arrange:** an outline, your own stats panels, and component panels on any side, all off until you add them
 - **Components:** add-ons are separate programs in any language, approved by you, started only when used ([protocol](docs/components.md))
 - **Your files:** `.folio` documents are readable JSON on your own disk
 - **Small and fast:** native, no Electron, nothing running in the background
@@ -33,6 +36,26 @@ You need [Rust](https://rustup.rs/).
 ```sh
 cargo run --release -- examples/welcome.folio   # run it
 ./scripts/bundle.sh                              # build target/Folio.app
+```
+
+## Customizing
+
+Everything lives in `~/Library/Application Support/Folio/` (**Folio → Open
+Config Folder**): `settings.toml`, `keys.toml`, `themes/` and `components/`.
+Share that folder and you've shared your whole setup. The full guide is in
+[docs/customizing.md](docs/customizing.md).
+
+```toml
+# keys.toml
+"cmd+shift+h" = "style h2"
+"cmd+t" = "none"
+
+# settings.toml
+status = "%words% $plural(%words%,word)   page %page%/%pages%"
+
+[[panels]]
+kind = "outline"
+side = "left"
 ```
 
 ## Themes
@@ -82,8 +105,9 @@ stats. The full protocol is in [docs/components.md](docs/components.md).
 | `Cmd+0`–`Cmd+9` | Paragraph styles (set by the theme) |
 | `Cmd+T` | Next theme |
 | `Cmd+=` / `Cmd+-` | Zoom |
-| `Cmd+.` | Show or hide the status line |
-| `Cmd+/` | All shortcuts |
+| `Cmd+.` / `Cmd+\` | Show or hide the status line / panels |
+| `Cmd+Shift+R` | Reload config |
+| `Cmd+/` | All shortcuts (every one can be changed in `keys.toml`) |
 
 ## Roadmap
 

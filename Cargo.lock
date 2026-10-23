@@ -1176,11 +1176,13 @@ name = "folio"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "libc",
  "muda",
  "rfd",
  "serde",
  "serde_json",
  "toml 0.9.12+spec-1.1.0",
+ "toml_edit 0.25.17+spec-1.1.0",
 ]
 
 [[package]]
@@ -3781,6 +3783,7 @@ dependencies = [
  "indexmap",
  "toml_datetime 1.1.2+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.4",
 ]
 
