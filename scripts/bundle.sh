@@ -52,4 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Ad-hoc signature: not a developer certificate, but Apple Silicon needs it to run.
+codesign --force --deep --sign - "$APP"
+
 echo "Built $APP (version $VERSION)"
