@@ -1,0 +1,68 @@
+name = "Modern"
+
+[page]          # A4
+width = 8.27
+height = 11.69
+margin_top = 0.9
+margin_bottom = 0.9
+margin_left = 0.9
+margin_right = 0.9
+gap = 0.25
+
+[colors]
+background = "#1b1d22"
+page = "#26292f"
+page_border = "#ffffff18"
+text = "#e4e6eb"
+cursor = "#7aa2ff"
+selection = "#7aa2ff50"
+status = "#6b7080"
+
+[fonts.sans]
+regular = "/System/Library/Fonts/Supplemental/Verdana.ttf"
+bold = "/System/Library/Fonts/Supplemental/Verdana Bold.ttf"
+italic = "/System/Library/Fonts/Supplemental/Verdana Italic.ttf"
+bold_italic = "/System/Library/Fonts/Supplemental/Verdana Bold Italic.ttf"
+
+[styles.body]
+font = "sans"
+size = 10.5
+line_height = 1.6
+space_after = 8
+key = 0
+
+[styles.title]
+font = "sans"
+size = 24
+bold = true
+space_after = 16
+color = "#ffffff"
+next = "body"
+key = 9
+
+[styles.h1]
+font = "sans"
+size = 17
+bold = true
+color = "#9db8ff"
+space_before = 12
+space_after = 6
+next = "body"
+key = 1
+
+[styles.h2]
+font = "sans"
+size = 13
+bold = true
+space_before = 8
+space_after = 4
+next = "body"
+key = 2
+
+[styles.quote]
+font = "sans"
+size = 10.5
+italic = true
+color = "#a0a6b4"
+indent = 0.3
+key = 3

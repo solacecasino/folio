@@ -1,0 +1,33 @@
+# A sample Folio component. Copy this folder to start your own.
+name = "Writing Tools"
+version = "0.1.0"
+author = "Folio"
+license = "MIT"
+description = "A word-count goal in the status line, today's date, and document stats."
+
+# The program to start, run from this folder. Any language works.
+run = ["python3", "main.py"]
+
+# What it can do through Folio. You approve these the first time it runs.
+permissions = ["document.read", "document.edit"]
+
+# "command" starts it the first time you use one of its commands;
+# "launch" starts it when Folio opens.
+start = "command"
+
+# Events it wants to hear about while running.
+events = ["changed"]
+
+[[commands]]
+id = "goal"
+label = "Cycle Word Goal"
+keys = "Cmd+Shift+G"
+
+[[commands]]
+id = "date"
+label = "Insert Today's Date"
+keys = "Cmd+Shift+D"
+
+[[commands]]
+id = "stats"
+label = "Document Stats"

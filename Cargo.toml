@@ -1,0 +1,19 @@
+[package]
+name = "folio"
+version = "0.1.0"
+edition = "2024"
+description = "A document editor that ships bare and is endlessly customizable through themes and components."
+license = "MIT"
+repository = "https://github.com/solacecasino/folio"
+
+[dependencies]
+eframe = "0.37.0"
+muda = "0.21.2"
+rfd = "0.17.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+[profile.release]
+# Keep the shipped app small.
+strip = true

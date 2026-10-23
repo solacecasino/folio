@@ -1,0 +1,21 @@
+{
+  "folio": 1,
+  "theme": "Paper",
+  "paragraphs": [
+    { "style": "title", "runs": [{ "text": "Welcome to Folio" }] },
+    { "style": "body", "runs": [
+      { "text": "Folio starts " },
+      { "text": "bare", "italic": true },
+      { "text": " and gets out of your way. There is no ribbon, no template store and no account. Everything about how a document looks lives in a " },
+      { "text": "theme file", "bold": true },
+      { "text": " you can open in any text editor." }
+    ]},
+    { "style": "h1", "runs": [{ "text": "Make it yours" }] },
+    { "style": "body", "runs": [
+      { "text": "Press Cmd+T to cycle themes, Cmd+1 and Cmd+2 for headings, Cmd+0 for body text. Copy a file from the themes folder, change the fonts, margins, colors or page size, and it shows up here." }
+    ]},
+    { "style": "quote", "runs": [{ "text": "Bare when installed, insanely customizable." }] },
+    { "style": "h2", "runs": [{ "text": "Shortcuts" }] },
+    { "style": "body", "runs": [{ "text": "Press Cmd+/ to see every shortcut. Cmd+. hides the status line." }] }
+  ]
+}

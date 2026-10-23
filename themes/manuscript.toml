@@ -1,0 +1,42 @@
+# Classic double-spaced manuscript format.
+name = "Manuscript"
+
+[colors]
+background = "#4a4640"
+page = "#ffffff"
+text = "#000000"
+cursor = "#000000"
+
+[fonts.times]
+regular = "/System/Library/Fonts/Supplemental/Times New Roman.ttf"
+bold = "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf"
+italic = "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf"
+bold_italic = "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf"
+
+[styles.body]
+font = "times"
+size = 12
+line_height = 2.0
+indent = 0.5
+space_after = 0
+align = "justify"
+key = 0
+
+[styles.title]
+font = "times"
+size = 12
+bold = true
+line_height = 2.0
+align = "center"
+space_after = 0
+next = "body"
+key = 9
+
+[styles.h1]
+font = "times"
+size = 12
+bold = true
+line_height = 2.0
+align = "center"
+next = "body"
+key = 1

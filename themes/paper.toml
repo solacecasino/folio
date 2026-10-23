@@ -1,0 +1,73 @@
+# Folio theme: a theme is just this file. Copy it, rename it, change anything.
+# Drop your own into ~/Library/Application Support/Folio/themes
+
+name = "Paper"
+
+[page]          # inches
+width = 8.5
+height = 11
+margin_top = 1
+margin_bottom = 1
+margin_left = 1.1
+margin_right = 1.1
+gap = 0.3
+
+[colors]        # #rgb, #rrggbb or #rrggbbaa
+background = "#3a3a3a"
+page = "#fdfcf8"
+page_border = "#00000030"
+text = "#222222"
+cursor = "#222222"
+selection = "#3d7eff40"
+status = "#a8a8a8"
+
+# Font families. Paths can be absolute, ~/..., or relative to this file.
+[fonts.serif]
+regular = "/System/Library/Fonts/Supplemental/Georgia.ttf"
+bold = "/System/Library/Fonts/Supplemental/Georgia Bold.ttf"
+italic = "/System/Library/Fonts/Supplemental/Georgia Italic.ttf"
+bold_italic = "/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf"
+
+# Paragraph styles. `key = N` binds Cmd+N. `next` is the style after Enter.
+[styles.body]
+font = "serif"
+size = 12
+line_height = 1.45
+space_after = 8
+key = 0
+
+[styles.title]
+font = "serif"
+size = 28
+bold = true
+align = "center"
+space_after = 18
+next = "body"
+key = 9
+
+[styles.h1]
+font = "serif"
+size = 20
+bold = true
+space_before = 14
+space_after = 8
+next = "body"
+key = 1
+
+[styles.h2]
+font = "serif"
+size = 15
+bold = true
+space_before = 10
+space_after = 6
+next = "body"
+key = 2
+
+[styles.quote]
+font = "serif"
+size = 12
+italic = true
+color = "#555555"
+indent = 0.4
+space_after = 8
+key = 3
