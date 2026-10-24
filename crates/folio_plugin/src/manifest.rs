@@ -277,17 +277,20 @@ mod tests {
 
     #[test]
     fn reads_capabilities() {
-        let m = parse(
+        // An absolute path on this platform (Windows needs a drive letter).
+        let notes = std::env::temp_dir().join("notes");
+        let m = parse(&format!(
             r#"
             name = "A"
             version = "1"
             events = ["changed"]
             [capabilities]
             document = ["read", "edit"]
-            filesystem = [{ path = "/tmp/notes", access = "read-write", mount = "/n" }, { path = "~/Docs" }]
+            filesystem = [{{ path = {:?}, access = "read-write", mount = "/n" }}, {{ path = "~/Docs" }}]
             network = ["example.com:443"]
             "#,
-        )
+            notes.display().to_string()
+        ))
         .unwrap();
         let c = &m.capabilities;
         assert!(c.can_read_document() && c.can_edit_document());
