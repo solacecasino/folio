@@ -5,13 +5,17 @@ install on purpose, like foobar2000's components. An adapter is an ordinary
 program in any language. Folio starts it only when it's needed and talks to it
 with JSON messages, one per line, over stdin and stdout.
 
-Folio's own adapters live in [`adapters/`](../adapters):
+Folio's own adapters live in their own repo,
+[folio-adapters](https://github.com/solacecasino/folio-adapters):
 
 | Adapter | What it adds | Written in |
 |---|---|---|
 | `pdf-export` | File → Export as PDF… (Cmd+E), print-perfect | Rust |
-| `folio-link` | Live co-editing with people you invite ([how it works](folio-link.md)) | Rust |
+| `folio-link` | Live co-editing with people you invite ([how it works](https://github.com/solacecasino/folio-adapters/blob/main/docs/folio-link.md)) | Rust |
 | `writing-tools` | A word-count goal, today's date, document stats | Python, about 100 lines |
+
+[writing-tools](https://github.com/solacecasino/folio-adapters/tree/main/writing-tools)
+is the simplest example to start from.
 
 Adapters used to be called *components*. Old `components/` folders,
 `component.toml` files, `kind = "component"` panels and
@@ -19,17 +23,20 @@ Adapters used to be called *components*. Old `components/` folders,
 
 ## Installing
 
-Put the adapter's folder in:
+Folio ships with no adapters. Open **Folio → Adapters…** (`Cmd+Shift+A`),
+click **Add Adapter…**, and pick an adapter's `.zip` (or, below the list, a
+folder). Folio shows what it is and what it may do before adding it, and it
+works right away, with no restart. The window lists each adapter with its
+permissions, a button for each command, and **Remove**, which moves it to the
+Trash.
 
-```
-~/Library/Application Support/Folio/adapters/
-```
+Installed adapters live in `~/Library/Application Support/Folio/adapters/`
+(**Show Folder** in the window). To package your own, zip its folder: a zip
+holding one folder that contains `adapter.toml`.
 
-**Folio → Open Adapters Folder** opens it. Restart Folio, and an **Adapters**
-menu appears with the adapter's commands, unless a command asks to live in one
-of Folio's own menus (`menu = "file"`, see below).
-(With no adapters installed, there's no Adapters menu at all.) Folio also
-reads `./adapters` next to where it runs, which is handy while developing.
+Commands appear in the Adapters window. A command can also ask for a place in
+one of Folio's menus (`menu = "file"`, see below), and users can bind any
+command to keys.
 
 The first time an adapter runs, Folio shows its name, author, license and
 permissions and asks you to allow it. Your answer is remembered in

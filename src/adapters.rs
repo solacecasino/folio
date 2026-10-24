@@ -7,9 +7,10 @@
 //! message per line over stdin/stdout. See `docs/adapters.md` for the
 //! protocol.
 //!
-//! Folio looks for adapters in `./adapters` and in
+//! Nothing is installed by default. People add adapters from the Adapters
+//! window (a downloaded `.zip` or folder), and Folio keeps them in
 //! `~/Library/Application Support/Folio/adapters`. Adapters used to be called
-//! components; `components/` folders and `component.toml` still work.
+//! components; a `components/` folder there and `component.toml` still work.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -92,8 +93,8 @@ pub struct CommandSpec {
     pub label: String,
     /// Default shortcut, e.g. "cmd+shift+d" (users can remap it in keys.toml).
     pub keys: Option<String>,
-    /// Put the command in Folio's "file", "edit", "format" or "view" menu
-    /// instead of the adapter's own submenu under Adapters.
+    /// Also show the command in Folio's "file", "edit", "format" or "view"
+    /// menu. Every command is in the Adapters window either way.
     pub menu: Option<String>,
 }
 
@@ -130,6 +131,20 @@ pub struct Adapter {
     /// Set when the user said no or it failed to start, so Folio doesn't
     /// keep asking every frame a panel wants it.
     blocked: bool,
+    /// Uninstalled or replaced while Folio was open. Kept as a stopped
+    /// placeholder so every other adapter keeps its index.
+    pub removed: bool,
+}
+
+impl Adapter {
+    pub fn is_running(&self) -> bool {
+        self.running.is_some()
+    }
+
+    /// The user said no to it (or it failed to start) this session.
+    pub fn is_blocked(&self) -> bool {
+        self.blocked
+    }
 }
 
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -169,7 +184,52 @@ impl Host {
     }
 
     pub fn index_of(&self, name: &str) -> Option<usize> {
-        self.all.iter().position(|c| c.manifest.name == name)
+        self.all.iter().position(|c| !c.removed && c.manifest.name == name)
+    }
+
+    /// Installed adapters, with their indexes.
+    pub fn installed(&self) -> impl Iterator<Item = (usize, &Adapter)> {
+        self.all.iter().enumerate().filter(|(_, a)| !a.removed)
+    }
+
+    /// Stops an adapter's program and clears what it showed.
+    pub fn stop(&mut self, i: usize) {
+        self.send(i, json!({ "method": "shutdown" }));
+        let a = &mut self.all[i];
+        if let Some(mut r) = a.running.take() {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            let _ = r.child.kill();
+            let _ = r.child.wait();
+        }
+        a.status = None;
+        a.panels.clear();
+        if self.session.is_some_and(|(s, _)| s == i) {
+            self.session = None;
+            self.peers.clear();
+        }
+    }
+
+    /// Brings the list in line with what's installed on disk: adapters still
+    /// there keep running, new ones are added, gone or replaced ones stop.
+    pub fn sync(&mut self, found: Vec<Adapter>) {
+        for i in 0..self.all.len() {
+            let a = &self.all[i];
+            let same = found
+                .iter()
+                .any(|f| f.dir == a.dir && f.manifest.name == a.manifest.name && f.manifest.version == a.manifest.version);
+            if !a.removed && !same {
+                self.stop(i);
+                self.all[i].removed = true;
+            }
+        }
+        for f in found {
+            let known = self.all.iter().any(|a| {
+                !a.removed && a.dir == f.dir && a.manifest.name == f.manifest.name && a.manifest.version == f.manifest.version
+            });
+            if !known {
+                self.all.push(f);
+            }
+        }
     }
 
     /// Starts an adapter whose panel is on screen. Asks for approval once;
@@ -406,7 +466,7 @@ impl Host {
     }
 
     pub fn status_items(&self) -> impl Iterator<Item = &str> {
-        self.all.iter().filter_map(|c| c.status.as_deref())
+        self.all.iter().filter(|c| !c.removed).filter_map(|c| c.status.as_deref())
     }
 }
 
@@ -456,14 +516,14 @@ fn panel_line(v: &Value) -> PanelLine {
 
 // ---- Discovery --------------------------------------------------------------
 
+pub fn adapters_dir() -> PathBuf {
+    crate::settings::config_dir().join("adapters")
+}
+
+/// Installed adapters. Folio only looks in the config folder, so nothing
+/// appears unless someone installed it.
 pub fn discover() -> Vec<Adapter> {
-    let config = crate::settings::config_dir();
-    discover_in(&[
-        PathBuf::from("components"),
-        PathBuf::from("adapters"),
-        config.join("components"),
-        config.join("adapters"),
-    ])
+    discover_in(&[crate::settings::config_dir().join("components"), adapters_dir()])
 }
 
 /// Finds adapters in `dirs`; a later folder's adapter replaces an earlier
@@ -487,6 +547,7 @@ fn discover_in(dirs: &[PathBuf]) -> Vec<Adapter> {
                         status: None,
                         panels: BTreeMap::new(),
                         blocked: false,
+                        removed: false,
                     });
                 }
                 Err(e) => eprintln!("folio: skipping adapter {}: {e}", folder.display()),
@@ -504,6 +565,166 @@ fn load_manifest(folder: &Path) -> Result<Manifest, String> {
         .ok_or("no adapter.toml")?;
     let src = std::fs::read_to_string(manifest).map_err(|e| e.to_string())?;
     toml::from_str(&src).map_err(|e| e.to_string())
+}
+
+// ---- Installing -------------------------------------------------------------
+
+/// An adapter unpacked and checked, ready to install.
+pub struct Staged {
+    /// The folder holding `adapter.toml`.
+    pub dir: PathBuf,
+    pub manifest: Manifest,
+    /// A temporary folder to delete afterwards (for zips).
+    temp: Option<PathBuf>,
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        if let Some(t) = &self.temp {
+            let _ = std::fs::remove_dir_all(t);
+        }
+    }
+}
+
+/// Unpacks a downloaded adapter (`.zip` or folder) and reads its manifest,
+/// without installing anything yet.
+pub fn stage(source: &Path) -> Result<Staged, String> {
+    let (root, temp) = if source.is_dir() {
+        (source.to_path_buf(), None)
+    } else if source.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+        let temp = std::env::temp_dir().join(format!("folio-install-{}", crate::safety::new_doc_id()));
+        let status = Command::new("ditto")
+            .arg("-x")
+            .arg("-k")
+            .arg(source)
+            .arg(&temp)
+            .status()
+            .map_err(|e| format!("Couldn't unpack the zip: {e}"))?;
+        if !status.success() {
+            let _ = std::fs::remove_dir_all(&temp);
+            return Err("That zip couldn't be unpacked".into());
+        }
+        (temp.clone(), Some(temp))
+    } else {
+        return Err("Choose an adapter's .zip file or its folder".into());
+    };
+    let mut staged = Staged {
+        dir: root.clone(),
+        manifest: Manifest::placeholder(),
+        temp,
+    };
+
+    // The manifest is at the top, or one folder down (how zips usually come).
+    let has_manifest = |d: &Path| d.join("adapter.toml").exists() || d.join("component.toml").exists();
+    let dir = if has_manifest(&root) {
+        root
+    } else {
+        let inner: Vec<PathBuf> = std::fs::read_dir(&root)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && has_manifest(p))
+            .collect();
+        match inner.as_slice() {
+            [one] => one.clone(),
+            [] => return Err("This isn't a Folio adapter: there's no adapter.toml in it".into()),
+            _ => return Err("This holds more than one adapter; add them one at a time".into()),
+        }
+    };
+    staged.manifest = load_manifest(&dir).map_err(|e| format!("Its adapter.toml has a problem: {e}"))?;
+    staged.dir = dir;
+    Ok(staged)
+}
+
+/// Installs a staged adapter into `root`, replacing any installed adapter
+/// with the same name (the old copy goes to `trash`). Returns where it went.
+pub fn install_into(staged: &Staged, root: &Path, trash: &Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    for existing in discover_in(&[root.to_path_buf()]) {
+        if existing.manifest.name == staged.manifest.name {
+            move_to_trash(&existing.dir, trash)?;
+        }
+    }
+    let base = staged
+        .dir
+        .file_name()
+        .map_or("adapter".to_owned(), |n| n.to_string_lossy().into_owned());
+    let mut dest = root.join(&base);
+    let mut n = 2;
+    while dest.exists() {
+        dest = root.join(format!("{base}-{n}"));
+        n += 1;
+    }
+    // ditto keeps the program's executable bit.
+    let ok = Command::new("ditto")
+        .arg(&staged.dir)
+        .arg(&dest)
+        .status()
+        .map_err(|e| e.to_string())?
+        .success();
+    if !ok {
+        return Err("Couldn't copy the adapter into place".into());
+    }
+    // Downloaded files are quarantined by macOS. The person chose to install
+    // this adapter, and Folio still asks before it first runs.
+    let _ = Command::new("xattr")
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(&dest)
+        .status();
+    Ok(dest)
+}
+
+pub fn install(staged: &Staged) -> Result<PathBuf, String> {
+    install_into(staged, &adapters_dir(), &trash_dir())
+}
+
+/// Moves an installed adapter to the Trash and forgets that it was allowed.
+pub fn uninstall(adapter: &Adapter) -> Result<(), String> {
+    move_to_trash(&adapter.dir, &trash_dir())?;
+    let mut approvals = load_approvals();
+    if approvals.remove(&adapter.manifest.name).is_some()
+        && let Some(path) = approvals_path()
+    {
+        let _ = std::fs::write(path, serde_json::to_string_pretty(&approvals).expect("serializes"));
+    }
+    Ok(())
+}
+
+fn trash_dir() -> PathBuf {
+    std::env::var_os("HOME").map_or_else(std::env::temp_dir, |h| PathBuf::from(h).join(".Trash"))
+}
+
+fn move_to_trash(dir: &Path, trash: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(trash).map_err(|e| e.to_string())?;
+    let name = dir.file_name().map_or("adapter".into(), |n| n.to_string_lossy().into_owned());
+    let mut dest = trash.join(&name);
+    if dest.exists() {
+        dest = trash.join(format!("{name} {}", crate::safety::local_timestamp().replace(':', ".")));
+    }
+    std::fs::rename(dir, &dest)
+        .or_else(|_| {
+            // Across volumes rename fails; fall back to mv.
+            Command::new("mv").arg(dir).arg(&dest).status().map(|_| ())
+        })
+        .map_err(|e| format!("Couldn't move {} to the Trash: {e}", dir.display()))
+}
+
+impl Manifest {
+    fn placeholder() -> Self {
+        Self {
+            name: String::new(),
+            version: String::new(),
+            author: String::new(),
+            license: String::new(),
+            description: String::new(),
+            run: Vec::new(),
+            permissions: Vec::new(),
+            start: Start::Command,
+            events: Vec::new(),
+            commands: Vec::new(),
+            panels: Vec::new(),
+        }
+    }
 }
 
 // ---- Approval ---------------------------------------------------------------
@@ -584,41 +805,140 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    /// Starts the bundled sample adapter and checks a full round trip:
-    /// command in, request out, reply in, follow-up message out.
+    /// Writes an adapter folder with a Python program and manifest.
+    fn write_adapter(dir: &Path, name: &str, script: &str, extra: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("main.py"), script).unwrap();
+        std::fs::write(
+            dir.join("adapter.toml"),
+            format!(
+                "name = \"{name}\"\nversion = \"1.0\"\nrun = [\"python3\", \"main.py\"]\n\
+                 permissions = [\"document.read\", \"document.edit\"]\n{extra}"
+            ),
+        )
+        .unwrap();
+    }
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("folio-{name}-{}", crate::safety::new_doc_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    const ROUND_TRIP: &str = r#"
+import json, sys
+def send(m): print(json.dumps(m), flush=True)
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("method") == "command" and m["params"]["command"] == "date":
+        send({"id": 1, "method": "doc.insert", "params": {"text": "October 24, 2026"}})
+    elif m.get("method") == "command" and m["params"]["command"] == "goal":
+        send({"id": 2, "method": "doc.text", "params": {}})
+    elif m.get("id") == 2:
+        words = len(m["result"]["text"].split())
+        send({"method": "status.set", "params": {"text": f"{words} / 250 words"}})
+        send({"method": "panel.set", "params": {"id": "goal", "lines": [
+            f"{words} of 250 words", {"text": "Next goal", "command": "goal"}]}})
+"#;
+
+    /// A full round trip with a real adapter process: command in, request
+    /// out, reply in, status and panel out.
     #[test]
-    fn sample_adapter_round_trip() {
-        let adapters: Vec<Adapter> = discover()
-            .into_iter()
-            .filter(|c| c.manifest.name == "Writing Tools")
-            .collect();
-        assert_eq!(adapters.len(), 1, "sample adapter is in ./adapters");
+    fn adapter_round_trip() {
+        let root = temp("round-trip");
+        write_adapter(&root.join("tools"), "Tools", ROUND_TRIP, "");
+        let mut host = Host::new(discover_in(std::slice::from_ref(&root)), Arc::new(|| {}), Box::new(|_| true));
 
-        let mut host = Host::new(adapters, Arc::new(|| {}), Box::new(|_| true));
-        host.run_command("Writing Tools", "date").unwrap();
-
+        host.run_command("Tools", "date").unwrap();
         let call = wait_for(&mut host, |c| c.method == "doc.insert");
-        assert!(call.params["text"].as_str().unwrap().len() >= 8);
+        assert_eq!(call.params["text"], "October 24, 2026");
         host.reply(0, call.id.unwrap(), Ok(Value::Null));
 
-        // The goal command answers through the status line, which the host handles itself.
-        host.run_command("Writing Tools", "goal").unwrap();
+        host.run_command("Tools", "goal").unwrap();
         let call = wait_for(&mut host, |c| c.method == "doc.text");
         host.reply(0, call.id.unwrap(), Ok(json!({ "text": "one two three" })));
         let deadline = Instant::now() + Duration::from_secs(5);
-        let has_progress = |h: &Host| {
-            h.all[0].panels.get("goal").is_some_and(|p| p.iter().any(|l| l.text.contains("3 of")))
-        };
-        while !(host.all[0].status.is_some() && has_progress(&host)) && Instant::now() < deadline {
+        while !host.all[0].panels.contains_key("goal") && Instant::now() < deadline {
             host.poll();
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(host.all[0].status.as_deref(), Some("3 / 250 words"));
-
-        // Its panel shows progress, with a clickable line that runs a command.
         let panel = &host.all[0].panels["goal"];
-        assert!(panel.iter().any(|l| l.text.contains("3 of 250")), "{panel:?}");
-        assert!(panel.iter().any(|l| l.command.as_deref() == Some("goal")));
+        assert_eq!(panel[0].text, "3 of 250 words");
+        assert_eq!(panel[1].command.as_deref(), Some("goal"), "clickable lines run commands");
+        drop(host);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn installs_from_zips_and_folders() {
+        let downloads = temp("downloads");
+        let (root, trash) = (temp("installed"), temp("trash"));
+
+        // A zip holding one folder, the way folio-adapters ships them.
+        write_adapter(&downloads.join("tools"), "Tools", ROUND_TRIP, "");
+        let zip = downloads.join("tools-1.0.zip");
+        assert!(Command::new("ditto")
+            .args(["-c", "-k", "--keepParent"])
+            .arg(downloads.join("tools"))
+            .arg(&zip)
+            .status()
+            .unwrap()
+            .success());
+        let staged = stage(&zip).unwrap();
+        assert_eq!(staged.manifest.name, "Tools");
+        let dest = install_into(&staged, &root, &trash).unwrap();
+        assert_eq!(dest, root.join("tools"));
+        drop(staged);
+        assert_eq!(discover_in(std::slice::from_ref(&root)).len(), 1);
+
+        // Installing a newer copy from a folder replaces it; the old one goes to the trash.
+        let newer = downloads.join("newer/tools");
+        write_adapter(&newer, "Tools", ROUND_TRIP, "description = \"v2\"");
+        let staged = stage(&downloads.join("newer")).unwrap();
+        install_into(&staged, &root, &trash).unwrap();
+        let found = discover_in(std::slice::from_ref(&root));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].manifest.description, "v2");
+        assert!(trash.join("tools").exists(), "the old copy can be recovered");
+
+        // Not an adapter, or a broken one, is refused with a reason.
+        let empty = downloads.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(stage(&empty).err().unwrap().contains("no adapter.toml"));
+        let broken = downloads.join("broken");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join("adapter.toml"), "name = ").unwrap();
+        assert!(stage(&broken).err().unwrap().contains("problem"));
+        assert!(stage(&downloads.join("tools-1.0.txt")).is_err());
+
+        for d in [downloads, root, trash] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn sync_keeps_running_adapters_and_stops_removed_ones() {
+        let root = temp("sync");
+        write_adapter(&root.join("a"), "A", ROUND_TRIP, "");
+        write_adapter(&root.join("b"), "B", ROUND_TRIP, "");
+        let mut host = Host::new(discover_in(std::slice::from_ref(&root)), Arc::new(|| {}), Box::new(|_| true));
+        host.run_command("A", "goal").unwrap();
+        assert!(host.all[0].is_running());
+
+        // B is uninstalled and C installed while Folio is open.
+        move_to_trash(&root.join("b"), &root.join(".trash")).unwrap();
+        write_adapter(&root.join("c"), "C", ROUND_TRIP, "");
+        host.sync(discover_in(std::slice::from_ref(&root)));
+
+        let names: Vec<&str> = host.installed().map(|(_, a)| a.manifest.name.as_str()).collect();
+        assert_eq!(names, ["A", "C"]);
+        assert!(host.all[0].is_running(), "A kept running");
+        assert!(host.all[1].removed && !host.all[1].is_running());
+        assert_eq!(host.index_of("C"), Some(2), "indexes never shift");
+        assert_eq!(host.index_of("B"), None);
+        drop(host);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A scripted adapter that starts a session, shows a peer, and reports
@@ -666,6 +986,7 @@ for line in sys.stdin:
             status: None,
             panels: BTreeMap::new(),
             blocked: false,
+            removed: false,
         };
         let mut host = Host::new(vec![adapter], Arc::new(|| {}), Box::new(|_| true));
         host.run_command("Fake", "share").unwrap();
@@ -694,16 +1015,45 @@ for line in sys.stdin:
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Installs the real zips built by the folio-adapters repo and exports a
+    /// PDF through the PDF Export adapter, the way the app does:
+    /// `FOLIO_ADAPTERS_DIST=../folio-adapters/dist FOLIO_MODEL=model.json
+    ///  FOLIO_PDF_OUT=out.pdf cargo test real_adapter_zips -- --ignored`
     #[test]
-    fn shipped_adapters_load() {
-        let found = discover_in(&[PathBuf::from("adapters")]);
+    #[ignore]
+    fn real_adapter_zips() {
+        let dist = PathBuf::from(std::env::var("FOLIO_ADAPTERS_DIST").unwrap());
+        let (root, trash) = (temp("real-installed"), temp("real-trash"));
+        let mut zips: Vec<PathBuf> = std::fs::read_dir(&dist)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "zip"))
+            .collect();
+        zips.sort();
+        for zip in &zips {
+            install_into(&stage(zip).unwrap(), &root, &trash).unwrap();
+        }
+        let found = discover_in(std::slice::from_ref(&root));
         let mut names: Vec<&str> = found.iter().map(|a| a.manifest.name.as_str()).collect();
         names.sort();
         assert_eq!(names, ["Folio Link", "PDF Export", "Writing Tools"]);
-        let pdf = found.iter().find(|a| a.manifest.name == "PDF Export").unwrap();
-        assert_eq!(pdf.manifest.commands[0].menu.as_deref(), Some("file"));
-        let link = found.iter().find(|a| a.manifest.name == "Folio Link").unwrap();
-        assert!(link.manifest.events.iter().any(|e| e == "snapshot"));
+
+        let mut host = Host::new(found, Arc::new(|| {}), Box::new(|_| true));
+        let pdf = host.index_of("PDF Export").unwrap();
+        host.run_command("PDF Export", "export").unwrap();
+        let call = wait_for(&mut host, |c| c.method == "doc.print_model");
+        let model: Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("FOLIO_MODEL").unwrap()).unwrap()).unwrap();
+        host.reply(pdf, call.id.unwrap(), Ok(model));
+        let call = wait_for(&mut host, |c| c.method == "ui.save_dialog");
+        let out = std::env::var("FOLIO_PDF_OUT").unwrap();
+        host.reply(pdf, call.id.unwrap(), Ok(json!(out)));
+        let call = wait_for(&mut host, |c| c.method == "notify");
+        assert!(call.params["text"].as_str().unwrap().starts_with("Exported"), "{:?}", call.params);
+        assert!(std::fs::metadata(&out).unwrap().len() > 1000);
+        drop(host);
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(trash);
     }
 
     #[test]

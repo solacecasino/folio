@@ -2,6 +2,7 @@
 //! How documents look comes from theme files; how Folio behaves comes from
 //! settings.toml and keys.toml; everything extra comes from adapters.
 
+mod adapter_window;
 mod adapters;
 mod doc;
 mod editor;
@@ -65,6 +66,7 @@ struct Folio {
     /// Whether the find bar had the keyboard last frame.
     find_focused: bool,
     show_versions: bool,
+    show_adapters: bool,
     /// The macOS spell checker, when spell checking is on.
     speller: Option<spell::Speller>,
     /// This document's saved versions, newest first, and whether to reload them.
@@ -126,6 +128,7 @@ impl Folio {
             find: find::FindBar::default(),
             find_focused: false,
             show_versions: false,
+            show_adapters: false,
             speller: None,
             versions: Vec::new(),
             versions_stale: true,
@@ -215,7 +218,7 @@ impl Folio {
             .style_keys()
             .map(|(keys, style)| (keys, Command::Style(style)))
             .collect();
-        for c in &self.adapters.all {
+        for (_, c) in self.adapters.installed() {
             for cmd in &c.manifest.commands {
                 if let Some(keys) = &cmd.keys {
                     defaults.push((keys.clone(), Command::Adapter(c.manifest.name.clone(), cmd.id.clone())));
@@ -233,9 +236,8 @@ impl Folio {
             styles: styles.into_iter().map(|(n, _)| n.clone()).collect(),
             adapters: self
                 .adapters
-                .all
-                .iter()
-                .map(|c| {
+                .installed()
+                .map(|(_, c)| {
                     let cmds = c
                         .manifest
                         .commands
@@ -558,15 +560,15 @@ impl Folio {
             }
             Builtin::OpenConfigFolder | Builtin::OpenAdaptersFolder => {
                 settings::write_examples();
-                let mut dir = settings::config_dir();
-                if b == Builtin::OpenAdaptersFolder {
-                    dir.push("adapters");
-                    self.notice = Some(("Drop adapter folders here, then restart Folio".into(), now));
-                }
-                if let Err(e) = std::process::Command::new("open").arg(dir).spawn() {
-                    self.error = Some(format!("Couldn't open the folder: {e}"));
-                }
+                let dir = if b == Builtin::OpenAdaptersFolder {
+                    adapters::adapters_dir()
+                } else {
+                    settings::config_dir()
+                };
+                let _ = std::fs::create_dir_all(&dir);
+                self.open_external(dir.as_os_str());
             }
+            Builtin::Adapters => self.show_adapters = true,
         }
     }
 
@@ -604,6 +606,114 @@ impl Folio {
                 self.find_focused = false;
             }
         }
+    }
+
+    /// Opens a folder in Finder or a link in the browser (Folio itself
+    /// doesn't connect anywhere).
+    fn open_external(&mut self, target: &std::ffi::OsStr) {
+        if let Err(e) = std::process::Command::new("open").arg(target).spawn() {
+            self.error = Some(format!("Couldn't open it: {e}"));
+        }
+    }
+
+    /// Re-reads installed adapters and rebuilds shortcuts and menus, so
+    /// changes take effect without restarting.
+    fn reload_adapters(&mut self) {
+        self.adapters.sync(adapters::discover());
+        self.rebuild_keys();
+    }
+
+    fn adapter_window_action(&mut self, action: adapter_window::Action, now: f64) {
+        use adapter_window::Action;
+        match action {
+            Action::AddZip | Action::AddFolder => {
+                let dialog = FileDialog::new().set_title("Add Adapter");
+                let picked = if matches!(action, Action::AddZip) {
+                    dialog.add_filter("Adapter", &["zip"]).pick_file()
+                } else {
+                    dialog.pick_folder()
+                };
+                if let Some(source) = picked {
+                    self.add_adapter(&source, now);
+                }
+            }
+            Action::GetAdapters => self.open_external(adapter_window::GET_ADAPTERS_URL.as_ref()),
+            Action::ShowFolder => {
+                let dir = adapters::adapters_dir();
+                let _ = std::fs::create_dir_all(&dir);
+                self.open_external(dir.as_os_str());
+            }
+            Action::Run(command) => self.run(command, now),
+            Action::Remove(i) => self.remove_adapter(i, now),
+            Action::Close => self.show_adapters = false,
+        }
+    }
+
+    fn add_adapter(&mut self, source: &std::path::Path, now: f64) {
+        let staged = match adapters::stage(source) {
+            Ok(s) => s,
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        };
+        let m = &staged.manifest;
+        let by = if m.author.is_empty() { String::new() } else { format!(" by {}", m.author) };
+        let mut text = format!("Add “{}” {}{by}?", m.name, m.version);
+        if !m.description.is_empty() {
+            text += &format!("\n\n{}", m.description);
+        }
+        if !m.permissions.is_empty() {
+            text += "\n\nIt will be able to:";
+            for p in &m.permissions {
+                text += &format!("\n•  {}", adapters::describe(p));
+            }
+        }
+        if self.adapters.index_of(&m.name).is_some() {
+            text += "\n\nThis replaces the copy you have now (it goes to the Trash).";
+        }
+        text += "\n\nAdapters are separate programs. Only add ones you trust.";
+        let ok = MessageDialog::new()
+            .set_title("Add adapter?")
+            .set_description(text)
+            .set_buttons(MessageButtons::OkCancel)
+            .show()
+            == MessageDialogResult::Ok;
+        if !ok {
+            return;
+        }
+        if let Some(i) = self.adapters.index_of(&m.name) {
+            self.adapters.stop(i);
+        }
+        match adapters::install(&staged) {
+            Ok(_) => {
+                self.notice = Some((format!("Added {}", staged.manifest.name), now));
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e),
+        }
+        self.reload_adapters();
+    }
+
+    fn remove_adapter(&mut self, i: usize, now: f64) {
+        let name = self.adapters.all[i].manifest.name.clone();
+        let ok = MessageDialog::new()
+            .set_title("Remove adapter?")
+            .set_description(format!(
+                "Remove “{name}”? It moves to the Trash, and Folio forgets that you allowed it."
+            ))
+            .set_buttons(MessageButtons::OkCancel)
+            .show()
+            == MessageDialogResult::Ok;
+        if !ok {
+            return;
+        }
+        self.adapters.stop(i);
+        match adapters::uninstall(&self.adapters.all[i]) {
+            Ok(()) => self.notice = Some((format!("Removed {name}"), now)),
+            Err(e) => self.error = Some(e),
+        }
+        self.reload_adapters();
     }
 
     fn panel_action(&mut self, action: panels::Action, now: f64) {
@@ -666,7 +776,7 @@ impl Folio {
             // The older name for the same field.
             f.insert("component_status".into(), statuses.join("   "));
         }
-        for c in &self.adapters.all {
+        for (_, c) in self.adapters.installed() {
             if let Some(s) = &c.status {
                 f.insert(format!("adapter:{}", c.manifest.name.to_lowercase()), s.clone());
                 f.insert(format!("component:{}", c.manifest.name.to_lowercase()), s.clone());
@@ -1044,6 +1154,12 @@ impl eframe::App for Folio {
 
         if self.show_versions {
             self.versions_window(&ctx);
+        }
+        if self.show_adapters {
+            let actions = adapter_window::show(&ctx, &self.adapters, &self.themes[self.theme], &self.keymap);
+            for action in actions {
+                self.adapter_window_action(action, now);
+            }
         }
 
         let values = self.fields();

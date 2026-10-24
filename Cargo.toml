@@ -1,6 +1,6 @@
 [package]
 name = "folio"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 description = "A document editor that ships bare and is endlessly customizable through themes and components."
 license = "MIT"

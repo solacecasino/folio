@@ -44,7 +44,8 @@ cargo run --release -- examples/welcome.folio   # run it
 ## Customizing
 
 Everything lives in `~/Library/Application Support/Folio/` (**Folio → Open
-Config Folder**): `settings.toml`, `keys.toml`, `themes/` and `adapters/`.
+Config Folder**): `settings.toml`, `keys.toml`, `themes/`, and the
+`adapters/` you've added.
 Share that folder and you've shared your whole setup. The full guide is in
 [docs/customizing.md](docs/customizing.md).
 
@@ -94,15 +95,21 @@ See [themes/paper.toml](themes/paper.toml) for every option.
 
 ## Adapters
 
-Folio.app ships bare. Anything optional is an **adapter**: a small add-on you
-install only if you want it. Each release also has a **Folio-Adapters** zip;
-drag the folders you want into **Folio → Open Adapters Folder** and restart.
+Folio.app ships with nothing extra. Anything optional is an **adapter**, a
+small add-on you install only if you want it. Adapters live in their own repo,
+[**folio-adapters**](https://github.com/solacecasino/folio-adapters):
 
 | Adapter | Adds |
 |---|---|
-| [pdf-export](adapters/pdf-export) | **Export as PDF** (`Cmd+E`): print-perfect, matching the page line for line, with your theme's fonts embedded and searchable text |
-| [folio-link](adapters/folio-link) | **Live co-editing** with people you invite, over encrypted peer-to-peer links. No accounts, no servers of ours. ([how it works](docs/folio-link.md)) |
-| [writing-tools](adapters/writing-tools) | A word-count goal panel, today's date, document stats (about 100 lines of Python, a good starting point) |
+| pdf-export | **Export as PDF** (`Cmd+E`): print-perfect, matching the page line for line, with your theme's fonts embedded and searchable text |
+| folio-link | **Live co-editing** with people you invite, over encrypted peer-to-peer links. No accounts, no servers of ours. |
+| writing-tools | A word-count goal panel, today's date, document stats (about 100 lines of Python, a good starting point) |
+
+To add one, download its zip from the
+[folio-adapters releases](https://github.com/solacecasino/folio-adapters/releases).
+Then in Folio choose **Folio → Adapters…** (`Cmd+Shift+A`), click **Add
+Adapter…**, and pick the zip. It works right away, with no restart. The same
+window shows what each adapter can do, runs its commands, and removes it.
 
 Adapters can be written in any language. The first time one runs, Folio shows
 what it asks for and you decide. The protocol is in
@@ -113,6 +120,7 @@ what it asks for and you decide. The protocol is in
 | | |
 |---|---|
 | `Cmd+N` / `Cmd+O` / `Cmd+S` | New, open, save |
+| `Cmd+Shift+A` | Adapters window |
 | `Cmd+E` | Export as PDF (with the pdf-export adapter) |
 | `Cmd+F` / `Cmd+G` / `Cmd+Alt+F` | Find, find next, find and replace |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold, italic, underline |

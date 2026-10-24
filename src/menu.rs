@@ -29,7 +29,8 @@ pub struct MenuContent<'a> {
 pub struct AdapterItem {
     pub id: String,
     pub label: String,
-    /// "file", "edit", "format" or "view" to place it in that menu.
+    /// "file", "edit", "format" or "view" to show it in that menu; other
+    /// adapter commands live in the Adapters window.
     pub menu: Option<String>,
 }
 
@@ -84,7 +85,7 @@ impl MenuBar {
                 &PredefinedMenuItem::about(Some("About Folio"), Some(about(icon))),
                 &sep(),
                 &builtin(&mut item, Builtin::OpenConfigFolder),
-                &builtin(&mut item, Builtin::OpenAdaptersFolder),
+                &builtin(&mut item, Builtin::Adapters),
                 &builtin(&mut item, Builtin::ReloadConfig),
                 &sep(),
                 &PredefinedMenuItem::hide(None),
@@ -151,26 +152,6 @@ impl MenuBar {
             ],
         );
 
-        // Bare by default: this menu only exists once an adapter is installed.
-        let own: Vec<(&String, Vec<&AdapterItem>)> = content
-            .adapters
-            .iter()
-            .map(|(name, items)| (name, items.iter().filter(|i| i.menu.is_none()).collect::<Vec<_>>()))
-            .filter(|(_, items)| !items.is_empty())
-            .collect();
-        let adapters = (!own.is_empty()).then(|| {
-            let list = Submenu::new("Adapters", true);
-            for (name, items) in &own {
-                let sub = Submenu::new(*name, true);
-                for i in items {
-                    sub.append(&item(Command::Adapter((*name).clone(), i.id.clone()), &i.label))
-                        .expect("menu builds");
-                }
-                list.append(&sub).expect("menu builds");
-            }
-            list
-        });
-
         let window = Submenu::with_items(
             "Window",
             true,
@@ -196,9 +177,6 @@ impl MenuBar {
                 }
             }
             menu.append(sub).expect("menu builds");
-        }
-        if let Some(adapters) = &adapters {
-            menu.append(adapters).expect("menu builds");
         }
         menu.append(&window).expect("menu builds");
         menu.init_for_nsapp();

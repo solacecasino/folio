@@ -38,6 +38,7 @@ pub enum Builtin {
     ReloadConfig,
     OpenConfigFolder,
     OpenAdaptersFolder,
+    Adapters,
 }
 
 /// (command, name in keys.toml, menu label, default keys)
@@ -68,6 +69,7 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::ReloadConfig, "reload-config", "Reload Config", &["cmd+shift+r"]),
     (Builtin::OpenConfigFolder, "open-config-folder", "Open Config Folder", &[]),
     (Builtin::OpenAdaptersFolder, "open-adapters-folder", "Open Adapters Folder", &[]),
+    (Builtin::Adapters, "adapters", "Adapters…", &["cmd+shift+a"]),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

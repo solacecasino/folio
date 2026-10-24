@@ -76,6 +76,7 @@ menu bar shows your shortcuts. `Cmd+/` lists every current binding.
 | `next-theme` `zoom-in` `zoom-out` `zoom-reset` | View |
 | `toggle-status` `toggle-panels` `help` | Show or hide things |
 | `reload-config` `open-config-folder` | Config |
+| `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
 
 Themes add default `cmd+<digit>` shortcuts for styles with `key = <digit>`,
