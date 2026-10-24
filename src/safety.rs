@@ -22,21 +22,10 @@ pub fn new_doc_id() -> String {
 
 /// Local time as `2026-10-23 14:05:09`.
 pub fn local_timestamp() -> String {
-    // SAFETY: `time` and `localtime_r` only write to the values we pass in.
-    let tm = unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm
-    };
+    let t = crate::platform::local_time();
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec
+        t.year, t.month, t.day, t.hour, t.minute, t.second
     )
 }
 
@@ -175,8 +164,8 @@ pub fn orphaned_recoveries() -> Vec<(PathBuf, Recovery)> {
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
         .filter(|p| {
             // Another Folio window that's still open owns its own file.
-            let pid: Option<i32> = p.file_stem().and_then(|s| s.to_str()?.parse().ok());
-            pid.is_none_or(|pid| pid != std::process::id() as i32 && !process_alive(pid))
+            let pid: Option<u32> = p.file_stem().and_then(|s| s.to_str()?.parse().ok());
+            pid.is_none_or(|pid| pid != std::process::id() && !crate::platform::process_alive(pid))
         })
         .filter_map(|p| {
             let record = serde_json::from_str(&std::fs::read_to_string(&p).ok()?).ok()?;
@@ -185,11 +174,6 @@ pub fn orphaned_recoveries() -> Vec<(PathBuf, Recovery)> {
         .collect();
     found.sort_by(|a, b| b.1.saved_at.cmp(&a.1.saved_at));
     found
-}
-
-fn process_alive(pid: i32) -> bool {
-    // SAFETY: signal 0 only checks that the process exists.
-    unsafe { libc::kill(pid, 0) == 0 }
 }
 
 impl Recovery {

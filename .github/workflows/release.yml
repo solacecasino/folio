@@ -1,0 +1,70 @@
+# Builds and tests Folio on macOS, Windows and Linux. Pushing a tag like
+# v0.6.0 also publishes a GitHub release with all three downloads, using
+# docs/releases/<tag>.md as the notes. Run it by hand (Actions → Release →
+# Run workflow) to get the downloads as artifacts without releasing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon
+          - os: windows-latest
+          - os: ubuntu-22.04      # an older glibc, so it runs on more distros
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libgl1-mesa-dev hunspell-en-us fonts-dejavu-core
+
+      - name: Test
+        run: cargo test
+
+      - name: Package
+        run: python scripts/package.py
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: folio-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          notes="docs/releases/${tag}.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          gh release create "$tag" dist/* --title "Folio ${tag#v}" "$@"

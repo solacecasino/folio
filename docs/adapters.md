@@ -27,12 +27,12 @@ Folio ships with no adapters. Open **Folio → Adapters…** (`Cmd+Shift+A`),
 click **Add Adapter…**, and pick an adapter's `.zip` (or, below the list, a
 folder). Folio shows what it is and what it may do before adding it, and it
 works right away, with no restart. The window lists each adapter with its
-permissions, a button for each command, and **Remove**, which moves it to the
-Trash.
+permissions, a button for each command, and **Remove**.
 
-Installed adapters live in `~/Library/Application Support/Folio/adapters/`
+Installed adapters live in the `adapters` folder of Folio's config folder
 (**Show Folder** in the window). To package your own, zip its folder: a zip
-holding one folder that contains `adapter.toml`.
+holding one folder that contains `adapter.toml`. **Remove** moves an adapter
+to the Trash (the Recycle Bin on Windows).
 
 Commands appear in the Adapters window. A command can also ask for a place in
 one of Folio's menus (`menu = "file"`, see below), and users can bind any
@@ -40,8 +40,8 @@ command to keys.
 
 The first time an adapter runs, Folio shows its name, author, license and
 permissions and asks you to allow it. Your answer is remembered in
-`~/Library/Application Support/Folio/approvals.json` until the adapter asks
-for more permissions.
+`approvals.json` in the config folder until the adapter asks for more
+permissions.
 
 ## `adapter.toml`
 
@@ -68,6 +68,15 @@ id = "goal"                     # panels you can fill with panel.set
 title = "Word Goal"
 ```
 
+- `run` is started in the adapter's folder. A program given as a path
+  (`./pdf-export`) is found there, and on Windows `.exe` is added if needed,
+  so one `adapter.toml` works on every platform. On Windows, `python3` also
+  tries the `py` launcher and `python`.
+- Folio sets `FOLIO_CONFIG_DIR` to its config folder, for adapters that keep
+  their own files (Folio Link keeps its identity in `folio-link/` there), and
+  `PYTHONIOENCODING=utf-8`.
+- Compiled adapters are built once per platform. folio-adapters names each
+  zip for its platform, such as `pdf-export-0.2.0-windows-x64.zip`.
 - `start = "command"` starts the adapter the first time you pick one of its
   commands. `start = "launch"` starts it when Folio opens; use it only if the
   adapter needs events from the start.
@@ -93,7 +102,7 @@ people check.
 
 ## Messages
 
-Every message is one JSON object on one line.
+Every message is one JSON object on one line, in UTF-8.
 
 - A **notification** has `method` and `params` and gets no reply.
 - A **request** also has an `id`. The reply has the same `id` and either

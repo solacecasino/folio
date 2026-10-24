@@ -1,7 +1,8 @@
 //! The config folder and `settings.toml`. Folio has no settings window: every
 //! preference is a line in a text file you can edit, copy and share.
 //!
-//! Everything lives in `~/Library/Application Support/Folio/`:
+//! Everything lives in one folder (`~/Library/Application Support/Folio` on
+//! macOS, `%APPDATA%\Folio` on Windows, `~/.config/folio` on Linux):
 //! `settings.toml`, `keys.toml`, `themes/`, `adapters/`. Sharing that one
 //! folder shares a whole setup.
 
@@ -11,10 +12,12 @@ use std::time::SystemTime;
 
 use serde::Deserialize;
 
+/// `FOLIO_CONFIG_DIR` points Folio at another folder, e.g. a portable setup
+/// on a USB stick.
 pub fn config_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join("Library/Application Support/Folio"))
-        .unwrap_or_else(|| PathBuf::from("."))
+    std::env::var_os("FOLIO_CONFIG_DIR")
+        .filter(|v| !v.is_empty())
+        .map_or_else(crate::platform::default_config_dir, PathBuf::from)
 }
 
 pub fn settings_path() -> PathBuf {
@@ -280,9 +283,10 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 
 const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lines override the defaults;
 # bind a key to "none" to free it. Folio reloads this file when you save it.
-# Press Cmd+/ in Folio to see every current binding.
+# Press Cmd+/ (Ctrl+/ on Windows and Linux) in Folio to see every binding.
 #
-# Modifiers: cmd, shift, alt (or option), ctrl.
+# Modifiers: cmd, shift, alt (or option), ctrl. On Windows and Linux, cmd
+# means Ctrl, so the same keys.toml works on every computer.
 # Commands: new, open, save, save-as, quit, undo, redo, select-all, bold,
 # italic, underline, next-theme, zoom-in, zoom-out, zoom-reset, toggle-status,
 # toggle-panels, help, reload-config, open-config-folder,

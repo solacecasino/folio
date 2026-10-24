@@ -3,3 +3,4 @@
 /adapters/*/target
 /adapters/pdf-export/pdf-export
 /adapters/folio-link/folio-link
+/dist

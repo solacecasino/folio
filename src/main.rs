@@ -2,6 +2,9 @@
 //! How documents look comes from theme files; how Folio behaves comes from
 //! settings.toml and keys.toml; everything extra comes from adapters.
 
+// Release builds on Windows are window apps, with no console window.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod adapter_window;
 mod adapters;
 mod doc;
@@ -12,6 +15,7 @@ mod keys;
 mod menu;
 mod panels;
 mod pdf;
+mod platform;
 mod safety;
 mod settings;
 mod spell;
@@ -36,7 +40,8 @@ use theme::{FontMap, Theme, color};
 
 pub const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 
-/// Height of the strip drawn where the macOS titlebar would be.
+/// Height of the strip drawn where the macOS titlebar would be (the menus
+/// on Windows and Linux).
 const TITLEBAR: f32 = 28.0;
 
 struct Folio {
@@ -413,7 +418,7 @@ impl Folio {
         let confirm = MessageDialog::new()
             .set_title("Restore this version?")
             .set_description(
-                "The document will be replaced with this version. You can undo it with Cmd+Z, and your current text \
+                "The document will be replaced with this version. You can undo it, and your current text \
                  is kept as a version the next time you save.",
             )
             .set_buttons(MessageButtons::OkCancel)
@@ -608,10 +613,10 @@ impl Folio {
         }
     }
 
-    /// Opens a folder in Finder or a link in the browser (Folio itself
-    /// doesn't connect anywhere).
+    /// Opens a folder in the file browser or a link in the web browser
+    /// (Folio itself doesn't connect anywhere).
     fn open_external(&mut self, target: &std::ffi::OsStr) {
-        if let Err(e) = std::process::Command::new("open").arg(target).spawn() {
+        if let Err(e) = platform::open(target) {
             self.error = Some(format!("Couldn't open it: {e}"));
         }
     }
@@ -670,7 +675,7 @@ impl Folio {
             }
         }
         if self.adapters.index_of(&m.name).is_some() {
-            text += "\n\nThis replaces the copy you have now (it goes to the Trash).";
+            text += &format!("\n\nThis replaces the copy you have now (it goes to {}).", platform::TRASH);
         }
         text += "\n\nAdapters are separate programs. Only add ones you trust.";
         let ok = MessageDialog::new()
@@ -700,7 +705,8 @@ impl Folio {
         let ok = MessageDialog::new()
             .set_title("Remove adapter?")
             .set_description(format!(
-                "Remove “{name}”? It moves to the Trash, and Folio forgets that you allowed it."
+                "Remove “{name}”? It moves to {}, and Folio forgets that you allowed it.",
+                platform::TRASH
             ))
             .set_buttons(MessageButtons::OkCancel)
             .show()
@@ -945,28 +951,34 @@ impl Folio {
 
     // ---- Drawing --------------------------------------------------------------
 
-    /// Draws the title strip in the theme's colors and lets it move the window.
+    /// Draws the top strip in the theme's colors: on macOS the title, under
+    /// the transparent titlebar, which also moves the window; on Windows and
+    /// Linux, below the system's own titlebar, the menus.
     fn titlebar(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
         let colors = &self.themes[self.theme].colors;
         let bg = color(&colors.background);
-        ui.painter().rect_filled(rect, 0.0, bg);
-        ui.painter().text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            &self.title,
-            FontId::proportional(13.0),
-            color(&colors.status),
-        );
+        if cfg!(target_os = "macos") {
+            ui.painter().rect_filled(rect, 0.0, bg);
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                &self.title,
+                FontId::proportional(13.0),
+                color(&colors.status),
+            );
 
-        let response = ui.interact(rect, egui::Id::unique("titlebar"), Sense::click_and_drag());
-        if response.double_clicked() {
-            let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
-            ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized));
-        } else if response.drag_started() {
-            ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+            let response = ui.interact(rect, egui::Id::unique("titlebar"), Sense::click_and_drag());
+            if response.double_clicked() {
+                let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+                ui.ctx().send_viewport_cmd(ViewportCommand::Maximized(!maximized));
+            } else if response.drag_started() {
+                ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
+            }
+        } else if let Some(menu) = &mut self.menu {
+            menu.show(ui, rect, &self.themes[self.theme]);
         }
 
-        // Match the traffic lights and system UI to a light or dark theme.
+        // Match the system UI (traffic lights, a dark titlebar) to the theme.
         if self.appearance_for != Some(bg) {
             let [r, g, b, _] = bg.to_array();
             let luma = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
@@ -1074,7 +1086,7 @@ impl eframe::App for Folio {
         // Check the config files again even when idle, so edits show up.
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
 
-        let mut commands = self.menu.as_ref().map(MenuBar::poll).unwrap_or_default();
+        let mut commands = self.menu.as_mut().map(MenuBar::poll).unwrap_or_default();
         // While typing in the find bar, only find commands use the keyboard.
         let typing_in_find = self.find_focused;
         commands.extend(self.keymap.take_commands(&ctx, |c| {
@@ -1180,17 +1192,8 @@ fn needs_permission(permission: &str) -> String {
 
 /// Local date (YYYY-MM-DD) and time (HH:MM).
 fn local_date_time() -> (String, String) {
-    // SAFETY: `time` and `localtime_r` only write to the values we pass in.
-    let tm = unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm
-    };
-    (
-        format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday),
-        format!("{:02}:{:02}", tm.tm_hour, tm.tm_min),
-    )
+    let t = platform::local_time();
+    (format!("{:04}-{:02}-{:02}", t.year, t.month, t.day), format!("{:02}:{:02}", t.hour, t.minute))
 }
 
 fn main() -> eframe::Result {

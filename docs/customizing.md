@@ -3,14 +3,21 @@
 Folio has no settings window. Everything is a text file in one folder:
 
 ```
-~/Library/Application Support/Folio/
+Folio/
 ├── settings.toml     how Folio behaves and what's on screen
 ├── keys.toml         every keyboard shortcut
 ├── themes/           how documents look
 └── adapters/         add-ons you chose to install
 ```
 
-Open it with **Folio → Open Config Folder**. Folio reloads these files as soon
+| | The folder |
+|---|---|
+| macOS | `~/Library/Application Support/Folio` |
+| Windows | `%APPDATA%\Folio` |
+| Linux | `$XDG_CONFIG_HOME/folio`, usually `~/.config/folio` |
+
+Set `FOLIO_CONFIG_DIR` to use another folder, such as a portable setup on a
+USB stick. Open it with **Folio → Open Config Folder**. Folio reloads these files as soon
 as you save them; **Folio → Reload Config** (`Cmd+Shift+R`) forces a reload.
 If a file has a mistake, Folio keeps running with the defaults and shows the
 problem in red at the bottom of the window.
@@ -33,7 +40,7 @@ title = "%file%$if(%dirty%, •,)"
 ```toml
 autosave = true            # save named documents 2 seconds after you stop typing
 versions = 50              # snapshots kept per document; 0 turns it off
-spellcheck = true          # the macOS spell checker, with your learned words
+spellcheck = true          # your system's spell checker, with your learned words
 spell_language = "en"      # empty = your system language
 smart_quotes = true        # "straight" becomes “curly” as you type
 smart_dashes = true        # -- becomes —, ... becomes …
@@ -46,7 +53,12 @@ smart_dashes = true        # -- becomes —, ... becomes …
   every five minutes while autosaving). **File → Browse Versions…** lists
   them; Restore can be undone with Cmd+Z. They're ordinary `.folio` files.
 - Right-click a word with a red underline for suggestions, **Learn
-  Spelling** (adds it to your Mac's dictionary) or **Ignore Spelling**.
+  Spelling** or **Ignore Spelling**.
+- Spell check uses the system's checker on macOS and Windows (add languages
+  in the system settings), so learned words are shared with other apps. On
+  Linux it uses Hunspell dictionaries: install your language's package (for
+  example `hunspell-en-us`), or put `<lang>.aff` and `<lang>.dic` in the
+  `dictionaries/` folder. Learned words go to `dictionaries/personal.txt`.
 - Cmd+Z right after a smart quote or dash gives back the plain character.
 
 Every line is optional. Folio writes `theme`, `zoom`, `show_status`,
@@ -61,10 +73,11 @@ comments.
 "cmd+alt+g" = 'adapter "Writing Tools" goal'
 ```
 
-Modifiers: `cmd`, `shift`, `alt` (or `option`), `ctrl`. Keys: letters,
+Modifiers: `cmd`, `shift`, `alt` (or `option`), `ctrl`. On Windows and Linux
+`cmd` is the Ctrl key, so one `keys.toml` works on every computer. Keys: letters,
 digits, `f1`–`f20`, punctuation such as `=` `-` `.` `/` `\`, and names such as
 `enter`, `escape`, `up`, `space`. Your lines override the defaults, and the
-menu bar shows your shortcuts. `Cmd+/` lists every current binding.
+menus show your shortcuts. `Cmd+/` lists every current binding.
 
 | Command | Does |
 |---|---|
@@ -155,8 +168,18 @@ that per style with `outline = <level>` (`0` leaves a style out).
 
 ## Themes
 
-See [themes/paper.toml](../themes/paper.toml) for every option. Themes can
-also set:
+See [themes/paper.toml](../themes/paper.toml) for every option.
+
+A font can be a path (absolute, `~/…`, or relative to the theme file), a bare
+file name looked up in the system's font folders, or a list where the first
+one this computer has wins. That's how the built-in themes work everywhere:
+
+```toml
+[fonts.serif]
+regular = ["Georgia.ttf", "georgia.ttf", "DejaVuSerif.ttf"]   # macOS, Windows, Linux
+```
+
+Themes can also set:
 
 ```toml
 [page]

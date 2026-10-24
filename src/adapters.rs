@@ -8,8 +8,8 @@
 //! protocol.
 //!
 //! Nothing is installed by default. People add adapters from the Adapters
-//! window (a downloaded `.zip` or folder), and Folio keeps them in
-//! `~/Library/Application Support/Folio/adapters`. Adapters used to be called
+//! window (a downloaded `.zip` or folder), and Folio keeps them in the
+//! `adapters` folder of its config folder. Adapters used to be called
 //! components; a `components/` folder there and `component.toml` still work.
 
 use std::collections::BTreeMap;
@@ -254,15 +254,7 @@ impl Host {
         }
 
         let c = &mut self.all[i];
-        let (program, args) = c.manifest.run.split_first().ok_or("adapter.toml has an empty `run`")?;
-        let mut child = Command::new(program)
-            .args(args)
-            .current_dir(&c.dir)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| format!("Couldn't start {}: {e}", c.manifest.name))?;
+        let mut child = spawn(&c.dir, &c.manifest.run).map_err(|e| format!("Couldn't start {}: {e}", c.manifest.name))?;
 
         c.generation += 1;
         let generation = c.generation;
@@ -514,6 +506,50 @@ fn panel_line(v: &Value) -> PanelLine {
     }
 }
 
+/// Starts an adapter's `run` command in its folder. A program given as a
+/// path (`./pdf-export`) is found in the adapter's folder, with `.exe` added
+/// on Windows; on Windows `python3` also tries the `py` launcher and
+/// `python`, which is how Python usually installs there.
+fn spawn(dir: &Path, run: &[String]) -> Result<Child, String> {
+    let (program, args) = run.split_first().ok_or("adapter.toml has an empty `run`")?;
+    let mut tries: Vec<(std::ffi::OsString, Vec<&str>)> = Vec::new();
+    if program.contains(['/', '\\']) {
+        let path = dir.join(program);
+        let exe = path.with_extension("exe");
+        let path = if cfg!(windows) && !path.is_file() && exe.is_file() { exe } else { path };
+        tries.push((path.into_os_string(), Vec::new()));
+    } else {
+        if cfg!(windows) && program == "python3" {
+            tries.push(("py".into(), vec!["-3"]));
+            tries.push(("python".into(), Vec::new()));
+        }
+        tries.push((program.into(), Vec::new()));
+    }
+
+    let mut last = String::new();
+    for (program, prefix) in tries {
+        let mut command = Command::new(&program);
+        command
+            .args(prefix)
+            .args(args)
+            .current_dir(dir)
+            // So adapters keep their own files next to Folio's.
+            .env("FOLIO_CONFIG_DIR", crate::settings::config_dir())
+            // Messages are UTF-8; Python on Windows would otherwise use the code page.
+            .env("PYTHONIOENCODING", "utf-8")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit());
+        crate::platform::hide_console(&mut command);
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => last = format!("{} not found", program.to_string_lossy()),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(last)
+}
+
 // ---- Discovery --------------------------------------------------------------
 
 pub fn adapters_dir() -> PathBuf {
@@ -593,16 +629,14 @@ pub fn stage(source: &Path) -> Result<Staged, String> {
         (source.to_path_buf(), None)
     } else if source.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         let temp = std::env::temp_dir().join(format!("folio-install-{}", crate::safety::new_doc_id()));
-        let status = Command::new("ditto")
-            .arg("-x")
-            .arg("-k")
-            .arg(source)
-            .arg(&temp)
-            .status()
-            .map_err(|e| format!("Couldn't unpack the zip: {e}"))?;
-        if !status.success() {
+        let unpacked = std::fs::File::open(source)
+            .map_err(|e| e.to_string())
+            .and_then(|f| zip::ZipArchive::new(f).map_err(|e| e.to_string()))
+            // Keeps file permissions, like a program's executable bit.
+            .and_then(|mut zip| zip.extract(&temp).map_err(|e| e.to_string()));
+        if let Err(e) = unpacked {
             let _ = std::fs::remove_dir_all(&temp);
-            return Err("That zip couldn't be unpacked".into());
+            return Err(format!("That zip couldn't be unpacked: {e}"));
         }
         (temp.clone(), Some(temp))
     } else {
@@ -637,12 +671,13 @@ pub fn stage(source: &Path) -> Result<Staged, String> {
 }
 
 /// Installs a staged adapter into `root`, replacing any installed adapter
-/// with the same name (the old copy goes to `trash`). Returns where it went.
-pub fn install_into(staged: &Staged, root: &Path, trash: &Path) -> Result<PathBuf, String> {
+/// with the same name (the old copy is handed to `discard`). Returns where
+/// it went.
+pub fn install_into(staged: &Staged, root: &Path, discard: &dyn Fn(&Path) -> Result<(), String>) -> Result<PathBuf, String> {
     std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
     for existing in discover_in(&[root.to_path_buf()]) {
         if existing.manifest.name == staged.manifest.name {
-            move_to_trash(&existing.dir, trash)?;
+            discard(&existing.dir)?;
         }
     }
     let base = staged
@@ -655,32 +690,25 @@ pub fn install_into(staged: &Staged, root: &Path, trash: &Path) -> Result<PathBu
         dest = root.join(format!("{base}-{n}"));
         n += 1;
     }
-    // ditto keeps the program's executable bit.
-    let ok = Command::new("ditto")
-        .arg(&staged.dir)
-        .arg(&dest)
-        .status()
-        .map_err(|e| e.to_string())?
-        .success();
-    if !ok {
-        return Err("Couldn't copy the adapter into place".into());
-    }
+    crate::platform::copy_dir(&staged.dir, &dest).map_err(|e| format!("Couldn't copy the adapter into place: {e}"))?;
     // Downloaded files are quarantined by macOS. The person chose to install
     // this adapter, and Folio still asks before it first runs.
-    let _ = Command::new("xattr")
-        .args(["-dr", "com.apple.quarantine"])
-        .arg(&dest)
-        .status();
+    if cfg!(target_os = "macos") {
+        let _ = Command::new("xattr")
+            .args(["-dr", "com.apple.quarantine"])
+            .arg(&dest)
+            .status();
+    }
     Ok(dest)
 }
 
 pub fn install(staged: &Staged) -> Result<PathBuf, String> {
-    install_into(staged, &adapters_dir(), &trash_dir())
+    install_into(staged, &adapters_dir(), &crate::platform::move_to_trash)
 }
 
-/// Moves an installed adapter to the Trash and forgets that it was allowed.
+/// Moves an installed adapter to the trash and forgets that it was allowed.
 pub fn uninstall(adapter: &Adapter) -> Result<(), String> {
-    move_to_trash(&adapter.dir, &trash_dir())?;
+    crate::platform::move_to_trash(&adapter.dir)?;
     let mut approvals = load_approvals();
     if approvals.remove(&adapter.manifest.name).is_some()
         && let Some(path) = approvals_path()
@@ -688,25 +716,6 @@ pub fn uninstall(adapter: &Adapter) -> Result<(), String> {
         let _ = std::fs::write(path, serde_json::to_string_pretty(&approvals).expect("serializes"));
     }
     Ok(())
-}
-
-fn trash_dir() -> PathBuf {
-    std::env::var_os("HOME").map_or_else(std::env::temp_dir, |h| PathBuf::from(h).join(".Trash"))
-}
-
-fn move_to_trash(dir: &Path, trash: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(trash).map_err(|e| e.to_string())?;
-    let name = dir.file_name().map_or("adapter".into(), |n| n.to_string_lossy().into_owned());
-    let mut dest = trash.join(&name);
-    if dest.exists() {
-        dest = trash.join(format!("{name} {}", crate::safety::local_timestamp().replace(':', ".")));
-    }
-    std::fs::rename(dir, &dest)
-        .or_else(|_| {
-            // Across volumes rename fails; fall back to mv.
-            Command::new("mv").arg(dir).arg(&dest).status().map(|_| ())
-        })
-        .map_err(|e| format!("Couldn't move {} to the Trash: {e}", dir.display()))
 }
 
 impl Manifest {
@@ -819,6 +828,21 @@ mod tests {
         .unwrap();
     }
 
+    /// Zips a folder as one top-level folder, the way folio-adapters does.
+    /// The script is marked executable, as a compiled adapter would be.
+    fn zip_folder(dir: &Path, zip: &Path) {
+        use zip::write::SimpleFileOptions;
+        let mut out = zip::ZipWriter::new(std::fs::File::create(zip).unwrap());
+        let top = dir.file_name().unwrap().to_string_lossy().into_owned();
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let name = format!("{top}/{}", entry.file_name().to_string_lossy());
+            let mode = if name.ends_with(".py") { 0o755 } else { 0o644 };
+            out.start_file(name, SimpleFileOptions::default().unix_permissions(mode)).unwrap();
+            out.write_all(&std::fs::read(entry.path()).unwrap()).unwrap();
+        }
+        out.finish().unwrap();
+    }
+
     fn temp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("folio-{name}-{}", crate::safety::new_doc_id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -875,19 +899,21 @@ for line in sys.stdin:
         let downloads = temp("downloads");
         let (root, trash) = (temp("installed"), temp("trash"));
 
+        let discard = |d: &Path| crate::platform::move_into(d, &trash);
+
         // A zip holding one folder, the way folio-adapters ships them.
         write_adapter(&downloads.join("tools"), "Tools", ROUND_TRIP, "");
         let zip = downloads.join("tools-1.0.zip");
-        assert!(Command::new("ditto")
-            .args(["-c", "-k", "--keepParent"])
-            .arg(downloads.join("tools"))
-            .arg(&zip)
-            .status()
-            .unwrap()
-            .success());
+        zip_folder(&downloads.join("tools"), &zip);
         let staged = stage(&zip).unwrap();
         assert_eq!(staged.manifest.name, "Tools");
-        let dest = install_into(&staged, &root, &trash).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(staged.dir.join("main.py")).unwrap().permissions().mode();
+            assert!(mode & 0o100 != 0, "the executable bit survives the zip");
+        }
+        let dest = install_into(&staged, &root, &discard).unwrap();
         assert_eq!(dest, root.join("tools"));
         drop(staged);
         assert_eq!(discover_in(std::slice::from_ref(&root)).len(), 1);
@@ -896,7 +922,7 @@ for line in sys.stdin:
         let newer = downloads.join("newer/tools");
         write_adapter(&newer, "Tools", ROUND_TRIP, "description = \"v2\"");
         let staged = stage(&downloads.join("newer")).unwrap();
-        install_into(&staged, &root, &trash).unwrap();
+        install_into(&staged, &root, &discard).unwrap();
         let found = discover_in(std::slice::from_ref(&root));
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].manifest.description, "v2");
@@ -927,7 +953,7 @@ for line in sys.stdin:
         assert!(host.all[0].is_running());
 
         // B is uninstalled and C installed while Folio is open.
-        move_to_trash(&root.join("b"), &root.join(".trash")).unwrap();
+        crate::platform::move_into(&root.join("b"), &root.join(".trash")).unwrap();
         write_adapter(&root.join("c"), "C", ROUND_TRIP, "");
         host.sync(discover_in(std::slice::from_ref(&root)));
 
@@ -1032,7 +1058,7 @@ for line in sys.stdin:
             .collect();
         zips.sort();
         for zip in &zips {
-            install_into(&stage(zip).unwrap(), &root, &trash).unwrap();
+            install_into(&stage(zip).unwrap(), &root, &|d: &Path| crate::platform::move_into(d, &trash)).unwrap();
         }
         let found = discover_in(std::slice::from_ref(&root));
         let mut names: Vec<&str> = found.iter().map(|a| a.manifest.name.as_str()).collect();

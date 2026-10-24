@@ -1327,7 +1327,14 @@ mod tests {
         let words: Vec<&str> = model.pages.iter().flat_map(|p| &p.texts).map(|t| t.text.as_str()).collect();
         assert_eq!(words.iter().filter(|w| **w == "fox").count(), 8 * 60, "every word is printed once");
         let heading = model.pages[0].texts.iter().find(|t| t.text == "Heading").unwrap();
-        assert!(heading.font.as_ref().unwrap().ends_with("Georgia Bold.ttf"));
+        // Paper's bold face (Georgia, or DejaVu Serif on Linux), when installed.
+        if let Some(font) = &heading.font {
+            assert!(font.is_file());
+            let name = font.file_name().unwrap().to_string_lossy().to_lowercase();
+            assert!(["georgia bold.ttf", "georgiab.ttf", "dejavuserif-bold.ttf"].contains(&name.as_str()), "{name}");
+        } else if cfg!(target_os = "macos") {
+            panic!("macOS always has Georgia");
+        }
         assert_eq!(heading.size, 20.0);
         assert!(model.pages[1].texts.iter().any(|t| t.text == "2 / 3" || t.text.starts_with("2 /")), "footer");
         for page in &model.pages {

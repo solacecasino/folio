@@ -1,5 +1,6 @@
 # Folio theme: a theme is just this file. Copy it, rename it, change anything.
-# Drop your own into ~/Library/Application Support/Folio/themes
+# Drop your own into the themes folder in Folio's config folder
+# (Folio → Open Config Folder).
 
 name = "Paper"
 
@@ -21,12 +22,14 @@ cursor = "#222222"
 selection = "#3d7eff40"
 status = "#a8a8a8"
 
-# Font families. Paths can be absolute, ~/..., or relative to this file.
+# Font families. Paths can be absolute, ~/..., or relative to this file. A
+# bare file name is looked up in the system's font folders, and a list means
+# "the first of these this computer has": macOS, Windows, then Linux names.
 [fonts.serif]
-regular = "/System/Library/Fonts/Supplemental/Georgia.ttf"
-bold = "/System/Library/Fonts/Supplemental/Georgia Bold.ttf"
-italic = "/System/Library/Fonts/Supplemental/Georgia Italic.ttf"
-bold_italic = "/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf"
+regular = ["Georgia.ttf", "georgia.ttf", "DejaVuSerif.ttf"]
+bold = ["Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf"]
+italic = ["Georgia Italic.ttf", "georgiai.ttf", "DejaVuSerif-Italic.ttf"]
+bold_italic = ["Georgia Bold Italic.ttf", "georgiaz.ttf", "DejaVuSerif-BoldItalic.ttf"]
 
 # Paragraph styles. `key = N` binds Cmd+N. `next` is the style after Enter.
 [styles.body]

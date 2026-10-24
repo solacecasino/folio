@@ -1,19 +1,14 @@
-//! The native macOS menu bar, built from the keymap so it always shows the
-//! user's own shortcuts. It's rebuilt whenever keys, the theme or adapters
-//! change.
+//! The menus, built from the keymap so they always show the user's own
+//! shortcuts. They're rebuilt whenever keys, the theme or adapters change.
 //!
-//! Menu shortcuts are taken by macOS before the window sees the key press, so
-//! every item maps to a [`Command`] the app runs itself. Copy, cut and paste
-//! are left out on purpose: those keys go straight to the editor.
-
-use std::sync::Mutex;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
-use eframe::egui;
-use muda::{
-    AboutMetadataBuilder, Icon, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
-    accelerator::Accelerator,
-};
+//! On macOS they're the native menu bar. Menu shortcuts are taken by macOS
+//! before the window sees the key press, so every item maps to a
+//! [`Command`] the app runs itself. On Windows and Linux the same menus are
+//! drawn in the window's top strip, in the theme's colors, and shortcuts go
+//! through the keymap as usual.
+//!
+//! Copy, cut and paste are left out on purpose: those keys go straight to the
+//! editor.
 
 use crate::keys::{Builtin, Command, Keymap};
 
@@ -34,189 +29,360 @@ pub struct AdapterItem {
     pub menu: Option<String>,
 }
 
-pub struct MenuBar {
-    // Dropping the menu removes it from the menu bar, so keep it alive.
-    _menu: Menu,
-    /// Menu item ids are indexes into this list.
-    commands: Vec<Command>,
-    events: Receiver<String>,
+/// One line in a menu.
+enum Entry {
+    Item(Command, String),
+    Separator,
+    About,
+    /// Items macOS provides itself (Hide, Minimize, ...).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    System(SystemItem),
 }
 
-// muda allows one event handler per process, so it forwards ids to whichever
-// menu is current through this sender.
-static EVENTS: Mutex<Option<Sender<String>>> = Mutex::new(None);
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+enum SystemItem {
+    Hide,
+    HideOthers,
+    ShowAll,
+    Minimize,
+    Fullscreen,
+}
 
-impl MenuBar {
-    pub fn install(ctx: &egui::Context, icon: &egui::IconData, content: &MenuContent<'_>) -> Self {
-        let mut commands: Vec<Command> = Vec::new();
-        let mut item = |command: Command, label: &str| {
-            let accel = content
-                .keymap
-                .chord_for(&command)
-                .and_then(|c| c.accelerator().parse::<Accelerator>().ok());
-            let id = format!("m{}", commands.len());
-            commands.push(command);
-            MenuItem::with_id(id, label, true, accel)
-        };
-        let builtin = |item: &mut dyn FnMut(Command, &str) -> MenuItem, b: Builtin| {
-            let command = Command::Builtin(b);
-            let label = command.label();
-            item(command, &label)
-        };
-        let sep = PredefinedMenuItem::separator;
-        // Adapter commands that asked to live in one of Folio's own menus.
-        let placed = |menu: &str| -> Vec<(Command, String)> {
-            content
-                .adapters
-                .iter()
-                .flat_map(|(name, items)| {
-                    items
-                        .iter()
-                        .filter(move |i| i.menu.as_deref() == Some(menu))
-                        .map(move |i| (Command::Adapter(name.clone(), i.id.clone()), i.label.clone()))
-                })
-                .collect()
-        };
+struct Section {
+    key: &'static str,
+    title: &'static str,
+    entries: Vec<Entry>,
+}
 
-        let app = Submenu::with_items(
-            "Folio",
-            true,
-            &[
-                &PredefinedMenuItem::about(Some("About Folio"), Some(about(icon))),
-                &sep(),
-                &builtin(&mut item, Builtin::OpenConfigFolder),
-                &builtin(&mut item, Builtin::Adapters),
-                &builtin(&mut item, Builtin::ReloadConfig),
-                &sep(),
-                &PredefinedMenuItem::hide(None),
-                &PredefinedMenuItem::hide_others(None),
-                &PredefinedMenuItem::show_all(None),
-                &sep(),
-                &builtin(&mut item, Builtin::Quit),
+/// The menus, the same on every platform except for macOS's own items.
+fn sections(content: &MenuContent<'_>) -> Vec<Section> {
+    let b = |b: Builtin| {
+        let command = Command::Builtin(b);
+        let label = command.label();
+        Entry::Item(command, label)
+    };
+    let mac = cfg!(target_os = "macos");
+
+    let mut app = vec![
+        Entry::About,
+        Entry::Separator,
+        b(Builtin::OpenConfigFolder),
+        b(Builtin::Adapters),
+        b(Builtin::ReloadConfig),
+        Entry::Separator,
+    ];
+    if mac {
+        app.extend([
+            Entry::System(SystemItem::Hide),
+            Entry::System(SystemItem::HideOthers),
+            Entry::System(SystemItem::ShowAll),
+            Entry::Separator,
+        ]);
+    }
+    app.push(b(Builtin::Quit));
+
+    let mut format = vec![b(Builtin::Bold), b(Builtin::Italic), b(Builtin::Underline), Entry::Separator];
+    format.extend(content.styles.iter().map(|s| Entry::Item(Command::Style(s.clone()), s.clone())));
+
+    let mut all = vec![
+        Section { key: "app", title: "Folio", entries: app },
+        Section {
+            key: "file",
+            title: "File",
+            entries: vec![
+                b(Builtin::New),
+                b(Builtin::Open),
+                Entry::Separator,
+                b(Builtin::Save),
+                b(Builtin::SaveAs),
+                b(Builtin::Versions),
             ],
-        );
-        let file = Submenu::with_items(
-            "File",
-            true,
-            &[
-                &builtin(&mut item, Builtin::New),
-                &builtin(&mut item, Builtin::Open),
-                &sep(),
-                &builtin(&mut item, Builtin::Save),
-                &builtin(&mut item, Builtin::SaveAs),
-                &builtin(&mut item, Builtin::Versions),
+        },
+        Section {
+            key: "edit",
+            title: "Edit",
+            entries: vec![
+                b(Builtin::Undo),
+                b(Builtin::Redo),
+                Entry::Separator,
+                b(Builtin::SelectAll),
+                Entry::Separator,
+                b(Builtin::Find),
+                b(Builtin::FindNext),
+                b(Builtin::FindPrevious),
+                b(Builtin::Replace),
             ],
-        );
-        let edit = Submenu::with_items(
-            "Edit",
-            true,
-            &[
-                &builtin(&mut item, Builtin::Undo),
-                &builtin(&mut item, Builtin::Redo),
-                &sep(),
-                &builtin(&mut item, Builtin::SelectAll),
-                &sep(),
-                &builtin(&mut item, Builtin::Find),
-                &builtin(&mut item, Builtin::FindNext),
-                &builtin(&mut item, Builtin::FindPrevious),
-                &builtin(&mut item, Builtin::Replace),
+        },
+        Section { key: "format", title: "Format", entries: format },
+        Section {
+            key: "view",
+            title: "View",
+            entries: vec![
+                b(Builtin::NextTheme),
+                Entry::Separator,
+                b(Builtin::ZoomIn),
+                b(Builtin::ZoomOut),
+                b(Builtin::ZoomReset),
+                Entry::Separator,
+                b(Builtin::ToggleStatus),
+                b(Builtin::TogglePanels),
+                b(Builtin::Help),
             ],
-        );
-        let format = Submenu::with_items(
-            "Format",
-            true,
-            &[
-                &builtin(&mut item, Builtin::Bold),
-                &builtin(&mut item, Builtin::Italic),
-                &builtin(&mut item, Builtin::Underline),
-                &sep(),
-            ],
-        )
-        .expect("menu builds");
-        for style in &content.styles {
-            format.append(&item(Command::Style(style.clone()), style)).expect("menu builds");
+        },
+    ];
+
+    // Adapter commands that asked to live in one of Folio's own menus.
+    for section in &mut all {
+        let placed: Vec<Entry> = content
+            .adapters
+            .iter()
+            .flat_map(|(name, items)| {
+                items
+                    .iter()
+                    .filter(|i| i.menu.as_deref() == Some(section.key))
+                    .map(|i| Entry::Item(Command::Adapter(name.clone(), i.id.clone()), i.label.clone()))
+            })
+            .collect();
+        if !placed.is_empty() {
+            section.entries.push(Entry::Separator);
+            section.entries.extend(placed);
         }
-        let view = Submenu::with_items(
-            "View",
-            true,
-            &[
-                &builtin(&mut item, Builtin::NextTheme),
-                &sep(),
-                &builtin(&mut item, Builtin::ZoomIn),
-                &builtin(&mut item, Builtin::ZoomOut),
-                &builtin(&mut item, Builtin::ZoomReset),
-                &sep(),
-                &builtin(&mut item, Builtin::ToggleStatus),
-                &builtin(&mut item, Builtin::TogglePanels),
-                &builtin(&mut item, Builtin::Help),
-            ],
-        );
+    }
 
-        let window = Submenu::with_items(
-            "Window",
-            true,
-            &[&PredefinedMenuItem::minimize(None), &PredefinedMenuItem::fullscreen(None)],
-        )
-        .expect("menu builds");
+    if mac {
+        all.push(Section {
+            key: "window",
+            title: "Window",
+            entries: vec![Entry::System(SystemItem::Minimize), Entry::System(SystemItem::Fullscreen)],
+        });
+    }
+    all
+}
 
-        let menu = Menu::new();
-        let app = app.expect("menu builds");
-        let standard = [
-            ("file", file.expect("menu builds")),
-            ("edit", edit.expect("menu builds")),
-            ("format", format),
-            ("view", view.expect("menu builds")),
-        ];
-        menu.append(&app).expect("menu builds");
-        for (key, sub) in &standard {
-            let extra = placed(key);
-            if !extra.is_empty() {
-                sub.append(&sep()).expect("menu builds");
-                for (command, label) in extra {
-                    sub.append(&item(command, &label)).expect("menu builds");
+#[cfg(target_os = "macos")]
+pub use native::MenuBar;
+
+#[cfg(not(target_os = "macos"))]
+pub use drawn::MenuBar;
+
+#[cfg(target_os = "macos")]
+mod native {
+    use std::sync::Mutex;
+    use std::sync::mpsc::{Receiver, Sender, channel};
+
+    use eframe::egui;
+    use muda::{
+        AboutMetadataBuilder, Icon, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
+        accelerator::Accelerator,
+    };
+
+    use super::{Entry, MenuContent, SystemItem, sections};
+    use crate::keys::Command;
+    use crate::theme::Theme;
+
+    pub struct MenuBar {
+        // Dropping the menu removes it from the menu bar, so keep it alive.
+        _menu: Menu,
+        /// Menu item ids are indexes into this list.
+        commands: Vec<Command>,
+        events: Receiver<String>,
+    }
+
+    // muda allows one event handler per process, so it forwards ids to
+    // whichever menu is current through this sender.
+    static EVENTS: Mutex<Option<Sender<String>>> = Mutex::new(None);
+
+    impl MenuBar {
+        pub fn install(ctx: &egui::Context, icon: &egui::IconData, content: &MenuContent<'_>) -> Self {
+            let mut commands: Vec<Command> = Vec::new();
+            let menu = Menu::new();
+            let mut window_menu = None;
+
+            for section in sections(content) {
+                let sub = Submenu::new(section.title, true);
+                for entry in section.entries {
+                    let item: Box<dyn IsMenuItem> = match entry {
+                        Entry::Item(command, label) => {
+                            let accel = content
+                                .keymap
+                                .chord_for(&command)
+                                .and_then(|c| c.accelerator().parse::<Accelerator>().ok());
+                            let id = format!("m{}", commands.len());
+                            commands.push(command);
+                            Box::new(MenuItem::with_id(id, label, true, accel))
+                        }
+                        Entry::Separator => Box::new(PredefinedMenuItem::separator()),
+                        Entry::About => Box::new(PredefinedMenuItem::about(Some("About Folio"), Some(about(icon)))),
+                        Entry::System(s) => Box::new(match s {
+                            SystemItem::Hide => PredefinedMenuItem::hide(None),
+                            SystemItem::HideOthers => PredefinedMenuItem::hide_others(None),
+                            SystemItem::ShowAll => PredefinedMenuItem::show_all(None),
+                            SystemItem::Minimize => PredefinedMenuItem::minimize(None),
+                            SystemItem::Fullscreen => PredefinedMenuItem::fullscreen(None),
+                        }),
+                    };
+                    sub.append(item.as_ref()).expect("menu builds");
+                }
+                menu.append(&sub).expect("menu builds");
+                if section.key == "window" {
+                    window_menu = Some(sub);
                 }
             }
-            menu.append(sub).expect("menu builds");
-        }
-        menu.append(&window).expect("menu builds");
-        menu.init_for_nsapp();
-        window.set_as_windows_menu_for_nsapp();
+            menu.init_for_nsapp();
+            if let Some(w) = &window_menu {
+                w.set_as_windows_menu_for_nsapp();
+            }
 
-        let (tx, events) = channel();
-        let mut slot = EVENTS.lock().expect("menu lock");
-        if slot.is_none() {
-            let ctx = ctx.clone();
-            MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                if let Some(tx) = EVENTS.lock().expect("menu lock").as_ref() {
-                    let _ = tx.send(event.id.0);
-                }
-                // The app may be idle; wake it so the command runs right away.
-                ctx.request_repaint();
-            }));
-        }
-        *slot = Some(tx);
+            let (tx, events) = channel();
+            let mut slot = EVENTS.lock().expect("menu lock");
+            if slot.is_none() {
+                let ctx = ctx.clone();
+                MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+                    if let Some(tx) = EVENTS.lock().expect("menu lock").as_ref() {
+                        let _ = tx.send(event.id.0);
+                    }
+                    // The app may be idle; wake it so the command runs right away.
+                    ctx.request_repaint();
+                }));
+            }
+            *slot = Some(tx);
 
-        Self {
-            _menu: menu,
-            commands,
-            events,
+            Self {
+                _menu: menu,
+                commands,
+                events,
+            }
         }
+
+        pub fn poll(&mut self) -> Vec<Command> {
+            self.events
+                .try_iter()
+                .filter_map(|id| id.strip_prefix('m')?.parse::<usize>().ok())
+                .filter_map(|i| self.commands.get(i).cloned())
+                .collect()
+        }
+
+        /// The macOS menu bar draws itself.
+        pub fn show(&mut self, _ui: &mut egui::Ui, _rect: egui::Rect, _theme: &Theme) {}
     }
 
-    pub fn poll(&self) -> Vec<Command> {
-        self.events
-            .try_iter()
-            .filter_map(|id| id.strip_prefix('m')?.parse::<usize>().ok())
-            .filter_map(|i| self.commands.get(i).cloned())
-            .collect()
+    fn about(icon: &egui::IconData) -> muda::AboutMetadata {
+        AboutMetadataBuilder::new()
+            .name(Some("Folio"))
+            .version(Some(env!("CARGO_PKG_VERSION")))
+            .comments(Some("Bare when installed, insanely customizable."))
+            .icon(Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok())
+            .build()
     }
 }
 
-fn about(icon: &egui::IconData) -> muda::AboutMetadata {
-    AboutMetadataBuilder::new()
-        .name(Some("Folio"))
-        .version(Some(env!("CARGO_PKG_VERSION")))
-        .comments(Some("Bare when installed, insanely customizable."))
-        .icon(Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok())
-        .build()
+#[cfg(not(target_os = "macos"))]
+mod drawn {
+    use eframe::egui::{self, RichText};
+
+    use super::{Entry, MenuContent, sections};
+    use crate::keys::Command;
+    use crate::theme::{Theme, color};
+
+    pub struct MenuBar {
+        /// (title, entries with their shortcut text)
+        menus: Vec<(&'static str, Vec<(Entry, String)>)>,
+        clicked: Vec<Command>,
+        about_open: bool,
+        icon: Option<egui::TextureHandle>,
+        icon_data: egui::IconData,
+    }
+
+    impl MenuBar {
+        pub fn install(_ctx: &egui::Context, icon: &egui::IconData, content: &MenuContent<'_>) -> Self {
+            let menus = sections(content)
+                .into_iter()
+                .map(|s| {
+                    let entries = s
+                        .entries
+                        .into_iter()
+                        .map(|e| {
+                            let keys = match &e {
+                                Entry::Item(c, _) => content.keymap.chord_for(c).map(|c| c.accelerator()),
+                                _ => None,
+                            };
+                            (e, keys.unwrap_or_default())
+                        })
+                        .collect();
+                    (s.title, entries)
+                })
+                .collect();
+            Self {
+                menus,
+                clicked: Vec::new(),
+                about_open: false,
+                icon: None,
+                icon_data: icon.clone(),
+            }
+        }
+
+        pub fn poll(&mut self) -> Vec<Command> {
+            std::mem::take(&mut self.clicked)
+        }
+
+        /// Draws the menus in the window's top strip.
+        pub fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect, theme: &Theme) {
+            let colors = &theme.colors;
+            let bg = color(&colors.background);
+            let fg = color(&colors.status);
+            ui.painter().rect_filled(rect, 0.0, bg);
+            let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(6.0, 0.0))));
+            bar.visuals_mut().override_text_color = Some(fg);
+            bar.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+
+            egui::MenuBar::new().ui(&mut bar, |ui| {
+                for (title, entries) in &self.menus {
+                    ui.menu_button(RichText::new(*title).color(fg), |ui| {
+                        ui.set_min_width(220.0);
+                        for (entry, keys) in entries {
+                            match entry {
+                                Entry::Item(command, label) => {
+                                    if ui.add(egui::Button::new(label.as_str()).shortcut_text(keys.as_str())).clicked() {
+                                        self.clicked.push(command.clone());
+                                    }
+                                }
+                                Entry::Separator => {
+                                    ui.separator();
+                                }
+                                Entry::About => {
+                                    if ui.button("About Folio").clicked() {
+                                        self.about_open = true;
+                                    }
+                                }
+                                Entry::System(_) => {}
+                            }
+                        }
+                    });
+                }
+            });
+
+            if self.about_open {
+                let icon = self.icon.get_or_insert_with(|| {
+                    let image = egui::ColorImage::from_rgba_unmultiplied(
+                        [self.icon_data.width as usize, self.icon_data.height as usize],
+                        &self.icon_data.rgba,
+                    );
+                    ui.ctx().load_texture("folio-icon", image, egui::TextureOptions::LINEAR)
+                });
+                egui::Window::new("About Folio")
+                    .open(&mut self.about_open)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .show(ui.ctx(), |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.add(egui::Image::new(&*icon).fit_to_exact_size(egui::vec2(96.0, 96.0)));
+                            ui.heading("Folio");
+                            ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                            ui.label("Bare when installed, insanely customizable.");
+                        });
+                    });
+            }
+        }
+    }
 }

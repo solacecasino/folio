@@ -12,10 +12,10 @@ text = "#000000"
 cursor = "#000000"
 
 [fonts.times]
-regular = "/System/Library/Fonts/Supplemental/Times New Roman.ttf"
-bold = "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf"
-italic = "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf"
-bold_italic = "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf"
+regular = ["Times New Roman.ttf", "times.ttf", "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"]
+bold = ["Times New Roman Bold.ttf", "timesbd.ttf", "LiberationSerif-Bold.ttf", "DejaVuSerif-Bold.ttf"]
+italic = ["Times New Roman Italic.ttf", "timesi.ttf", "LiberationSerif-Italic.ttf", "DejaVuSerif-Italic.ttf"]
+bold_italic = ["Times New Roman Bold Italic.ttf", "timesbi.ttf", "LiberationSerif-BoldItalic.ttf", "DejaVuSerif-BoldItalic.ttf"]
 
 [styles.body]
 font = "times"

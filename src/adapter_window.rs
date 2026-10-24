@@ -19,7 +19,7 @@ pub enum Action {
     Close,
 }
 
-/// Shows the window (a real second macOS window) and returns what was clicked.
+/// Shows the window (a real second window) and returns what was clicked.
 pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) -> Vec<Action> {
     let mut actions = Vec::new();
     let colors = &theme.colors;
@@ -45,7 +45,8 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Adapters").size(22.0).strong().color(strong_text(strong, fg, bg)));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Show Folder").clicked() {
+                        let reveal = format!("Open the adapters folder in {}", crate::platform::FILE_BROWSER);
+                        if ui.button("Show Folder").on_hover_text(reveal).clicked() {
                             actions.push(Action::ShowFolder);
                         }
                         if ui.button("Get Adapters").on_hover_text(GET_ADAPTERS_URL).clicked() {

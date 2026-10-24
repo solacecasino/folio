@@ -19,10 +19,10 @@ selection = "#7aa2ff50"
 status = "#6b7080"
 
 [fonts.sans]
-regular = "/System/Library/Fonts/Supplemental/Verdana.ttf"
-bold = "/System/Library/Fonts/Supplemental/Verdana Bold.ttf"
-italic = "/System/Library/Fonts/Supplemental/Verdana Italic.ttf"
-bold_italic = "/System/Library/Fonts/Supplemental/Verdana Bold Italic.ttf"
+regular = ["Verdana.ttf", "verdana.ttf", "DejaVuSans.ttf"]
+bold = ["Verdana Bold.ttf", "verdanab.ttf", "DejaVuSans-Bold.ttf"]
+italic = ["Verdana Italic.ttf", "verdanai.ttf", "DejaVuSans-Oblique.ttf"]
+bold_italic = ["Verdana Bold Italic.ttf", "verdanaz.ttf", "DejaVuSans-BoldOblique.ttf"]
 
 [styles.body]
 font = "sans"

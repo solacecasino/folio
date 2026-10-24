@@ -183,17 +183,26 @@ impl Chord {
             Key::Plus | Key::Colon | Key::Questionmark | Key::Exclamationmark | Key::Pipe
                 | Key::OpenCurlyBracket | Key::CloseCurlyBracket
         );
+        // On Windows and Linux, "cmd" is the Ctrl key.
+        let (cmd, ctrl) = if cfg!(target_os = "macos") {
+            (self.cmd, self.ctrl)
+        } else {
+            (false, self.cmd || self.ctrl)
+        };
         key == self.key
-            && m.mac_cmd == self.cmd
+            && m.mac_cmd == cmd
             && m.alt == self.alt
-            && m.ctrl == self.ctrl
+            && m.ctrl == ctrl
             && (shifted_symbol || m.shift == self.shift)
     }
 
-    /// The same chord written for the macOS menu bar, e.g. "Cmd+Shift+Z".
+    /// The chord as menus show it: "Cmd+Shift+Z" on macOS, "Ctrl+Shift+Z"
+    /// elsewhere.
     pub fn accelerator(&self) -> String {
+        let mac = cfg!(target_os = "macos");
+        let (cmd, ctrl) = if mac { (self.cmd, self.ctrl) } else { (false, self.cmd || self.ctrl) };
         let mut out = String::new();
-        for (on, name) in [(self.cmd, "Cmd+"), (self.ctrl, "Ctrl+"), (self.alt, "Alt+"), (self.shift, "Shift+")] {
+        for (on, name) in [(cmd, "Cmd+"), (ctrl, "Ctrl+"), (self.alt, "Alt+"), (self.shift, "Shift+")] {
             if on {
                 out += name;
             }
@@ -396,6 +405,7 @@ mod tests {
         assert!(map.chord_for(&Command::Style("quote".into())).is_some());
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn default_shortcuts_show_in_the_menu_bar() {
         for (_, name, _, keys) in BUILTINS {
@@ -412,8 +422,13 @@ mod tests {
     #[test]
     fn matching_is_exact() {
         let undo = Chord::parse("cmd+z").unwrap();
-        let cmd_shift = egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
-        let cmd = egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND;
+        // What egui reports for the Cmd key on macOS, and Ctrl elsewhere.
+        let cmd = if cfg!(target_os = "macos") {
+            egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND
+        } else {
+            egui::Modifiers::CTRL | egui::Modifiers::COMMAND
+        };
+        let cmd_shift = cmd | egui::Modifiers::SHIFT;
         assert!(undo.matches(Key::Z, cmd));
         assert!(!undo.matches(Key::Z, cmd_shift));
         assert!(Chord::parse("cmd++").unwrap().matches(Key::Plus, cmd_shift));

@@ -4,7 +4,7 @@
 
 <p align="center"><b>Bare when installed, insanely customizable.</b></p>
 
-Folio is a lean document editor for macOS, written in Rust. It starts as a
+Folio is a lean document editor for macOS, Windows and Linux, written in Rust. It starts as a
 blank page and a cursor: no ribbon, no template store, no account. Everything
 about how documents look comes from plain theme files you own, and everything
 extra comes from optional **adapters** you choose to install, in the spirit
@@ -14,7 +14,7 @@ of [foobar2000](https://www.foobar2000.org/).
 
 - **Real pages:** page size, margins and pagination, like a word processor; long paragraphs flow across pages
 - **A safety net:** autosave, crash recovery, and a version history you can browse and restore
-- **Spell check** with the macOS dictionaries, plus smart quotes, em dashes and ellipses as you type
+- **Spell check** with your system's dictionaries, plus smart quotes, em dashes and ellipses as you type
 - **Find & replace** with match case and whole words
 - **Rich text:** bold, italic, underline and paragraph styles (title, headings, quote, …)
 - **Themes are files:** fonts, colors, page setup, headers and footers, and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
@@ -27,10 +27,16 @@ of [foobar2000](https://www.foobar2000.org/).
 
 ## Install
 
-Download `Folio.app` from [Releases](../../releases) and drag it into Applications.
+Download yours from [Releases](../../releases):
 
-The app isn't signed with an Apple developer certificate yet, so the first time
-you open it, right-click it and choose **Open**.
+| | Download | Then |
+|---|---|---|
+| **macOS** (Apple Silicon) | `Folio-<version>-macos-arm64.zip` | Unzip and drag **Folio.app** into Applications. It isn't signed with an Apple developer certificate yet, so the first time, right-click it and choose **Open**. |
+| **Windows** (64-bit) | `Folio-<version>-windows-x64.zip` | Unzip anywhere and run **folio.exe** (keep the `themes` folder next to it). If Windows says it protected your PC, click **More info → Run anyway**. |
+| **Linux** (x86-64) | `folio-<version>-linux-x64.tar.gz` | Unpack it and run `./install.sh` to add Folio to your app menu, or just run `./folio`. |
+
+On Windows and Linux the menus are in the window, and every `Cmd` shortcut
+below is `Ctrl`.
 
 ## Build from source
 
@@ -38,13 +44,19 @@ You need [Rust](https://rustup.rs/).
 
 ```sh
 cargo run --release -- examples/welcome.folio   # run it
-./scripts/bundle.sh                              # build target/Folio.app
+python3 scripts/package.py                      # build this platform's download into dist/
 ```
+
+On Linux you also need the usual windowing libraries, e.g. on Debian or
+Ubuntu: `sudo apt install libxkbcommon-dev libgl1-mesa-dev`. Releases are
+built on all three platforms by [GitHub Actions](.github/workflows/release.yml)
+when a version tag is pushed.
 
 ## Customizing
 
-Everything lives in `~/Library/Application Support/Folio/` (**Folio → Open
-Config Folder**): `settings.toml`, `keys.toml`, `themes/`, and the
+Everything lives in one folder (**Folio → Open Config Folder**):
+`~/Library/Application Support/Folio` on macOS, `%APPDATA%\Folio` on Windows,
+`~/.config/folio` on Linux. In it are `settings.toml`, `keys.toml`, `themes/`, and the
 `adapters/` you've added.
 Share that folder and you've shared your whole setup. The full guide is in
 [docs/customizing.md](docs/customizing.md).
@@ -64,7 +76,7 @@ side = "left"
 
 ## Themes
 
-Themes live in `themes/` and in `~/Library/Application Support/Folio/themes`.
+Themes live in `themes/` and in the `themes` folder of your config folder.
 Three come with Folio: **Paper**, **Modern** and **Manuscript**. `Cmd+T` cycles
 through them. A theme sets:
 
@@ -80,8 +92,8 @@ margin_left = 1.1
 background = "#3a3a3a"
 page = "#fdfcf8"
 
-[fonts.serif]          # any .ttf on your machine
-regular = "/System/Library/Fonts/Supplemental/Georgia.ttf"
+[fonts.serif]          # any .ttf on your machine: a path, a file name, or a list
+regular = ["Georgia.ttf", "georgia.ttf", "DejaVuSerif.ttf"]   # first one found wins
 
 [styles.h1]
 font = "serif"
@@ -95,7 +107,7 @@ See [themes/paper.toml](themes/paper.toml) for every option.
 
 ## Adapters
 
-Folio.app ships with nothing extra. Anything optional is an **adapter**, a
+Folio ships with nothing extra. Anything optional is an **adapter**, a
 small add-on you install only if you want it. Adapters live in their own repo,
 [**folio-adapters**](https://github.com/solacecasino/folio-adapters):
 

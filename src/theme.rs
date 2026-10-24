@@ -101,10 +101,54 @@ impl Default for Colors {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FontFiles {
-    pub regular: Option<String>,
-    pub bold: Option<String>,
-    pub italic: Option<String>,
-    pub bold_italic: Option<String>,
+    pub regular: Option<FontFile>,
+    pub bold: Option<FontFile>,
+    pub italic: Option<FontFile>,
+    pub bold_italic: Option<FontFile>,
+}
+
+/// A font file, or a list to try in order; the first one this computer has
+/// is used, so one theme can work on macOS, Windows and Linux. A bare file
+/// name like `"Georgia.ttf"` is looked up in the system's font folders.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum FontFile {
+    One(String),
+    FirstOf(Vec<String>),
+}
+
+impl FontFile {
+    fn candidates(&self) -> &[String] {
+        match self {
+            FontFile::One(s) => std::slice::from_ref(s),
+            FontFile::FirstOf(v) => v,
+        }
+    }
+}
+
+/// Every font file in the system's font folders, by lowercase file name.
+fn system_fonts() -> &'static HashMap<String, PathBuf> {
+    static FONTS: std::sync::OnceLock<HashMap<String, PathBuf>> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        fn walk(dir: &std::path::Path, depth: u32, out: &mut HashMap<String, PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if depth < 5 {
+                        walk(&path, depth + 1, out);
+                    }
+                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    out.entry(name.to_lowercase()).or_insert(path);
+                }
+            }
+        }
+        let mut out = HashMap::new();
+        for dir in crate::platform::font_dirs() {
+            walk(&dir, 0, &mut out);
+        }
+        out
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -198,11 +242,24 @@ impl Theme {
         (level > 0).then_some(level)
     }
 
+    /// The first of a font's files that exists.
+    fn find_font(&self, file: &FontFile) -> Option<PathBuf> {
+        file.candidates().iter().find_map(|c| {
+            let bare = !c.contains(['/', '\\']);
+            let path = if bare {
+                system_fonts().get(&c.to_lowercase()).cloned()?
+            } else {
+                self.resolve_path(c)
+            };
+            path.is_file().then_some(path)
+        })
+    }
+
     fn resolve_path(&self, p: &str) -> PathBuf {
         if let Some(rest) = p.strip_prefix("~/")
-            && let Some(home) = std::env::var_os("HOME")
+            && let Some(home) = std::env::home_dir()
         {
-            return PathBuf::from(home).join(rest);
+            return home.join(rest);
         }
         let path = PathBuf::from(p);
         if path.is_absolute() {
@@ -218,11 +275,15 @@ pub const DEFAULT_THEME: &str = include_str!("../themes/paper.toml");
 
 pub fn load_themes() -> Vec<Theme> {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    // Inside Folio.app the bundled themes live in Contents/Resources.
+    // Inside Folio.app the bundled themes live in Contents/Resources; on
+    // Windows and Linux they sit next to the program, or in share/folio
+    // when installed under ~/.local or /usr.
     if let Ok(exe) = std::env::current_exe()
-        && let Some(macos_dir) = exe.parent()
+        && let Some(exe_dir) = exe.parent()
     {
-        dirs.push(macos_dir.join("../Resources/themes"));
+        dirs.push(exe_dir.join("../Resources/themes"));
+        dirs.push(exe_dir.join("themes"));
+        dirs.push(exe_dir.join("../share/folio/themes"));
     }
     dirs.push(PathBuf::from("themes"));
     dirs.push(crate::settings::config_dir().join("themes"));
@@ -345,13 +406,16 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
             ];
             for (bold, italic, file) in variants {
                 let Some(file) = file else { continue };
-                let path = theme.resolve_path(file);
+                let Some(path) = theme.find_font(file) else {
+                    eprintln!("folio: {}: font not found: {}", theme.name, file.candidates().join(", "));
+                    continue;
+                };
                 let font_path = path.clone();
                 let key = match loaded.get(&path) {
                     Some(k) => k.clone(),
                     None => {
                         let Ok(bytes) = std::fs::read(&path) else {
-                            eprintln!("folio: font not found: {}", path.display());
+                            eprintln!("folio: couldn't read font {}", path.display());
                             continue;
                         };
                         let k = format!("file:{}", path.display());
