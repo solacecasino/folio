@@ -1,7 +1,12 @@
 # Folio adapters
 
-Folio ships bare. Everything extra is an **adapter**: an optional add-on you
-install on purpose, like foobar2000's components. An adapter is an ordinary
+> Most extensions should be [plugins](plugins.md): sandboxed WebAssembly that
+> runs inside Folio and can only reach what it declares. Adapters are for
+> what a sandbox can't do, such as running external command-line tools or
+> keeping a background connection open.
+
+Folio ships bare. An **adapter** is an optional add-on you install on
+purpose, like foobar2000's components. An adapter is an ordinary
 program in any language. Folio starts it only when it's needed and talks to it
 with JSON messages, one per line, over stdin and stdout.
 

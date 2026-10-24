@@ -21,7 +21,7 @@ of [foobar2000](https://www.foobar2000.org/).
 - **No settings window:** `settings.toml` and `keys.toml` control everything, reload live as you save them, and every shortcut is remappable
 - **A formatting language** for the status line, window title, page headers and footers, and panels: `%words% $plural(%words%,word)[ · %selection_words% selected]`
 - **Panels you arrange:** an outline, your own stats panels, and adapter panels on any side, all off until you add them
-- **Adapters:** everything optional is a separate add-on you choose, in any language, approved by you and started only when used
+- **Plugins and adapters:** everything optional is an add-on you choose. Plugins are sandboxed WebAssembly that can only reach what they declare; adapters are separate programs in any language for external tools
 - **Your files:** `.folio` documents are readable JSON on your own disk
 - **Small and fast:** native, no Electron, nothing running in the background
 
@@ -107,8 +107,14 @@ See [themes/paper.toml](themes/paper.toml) for every option.
 
 ## Adapters
 
-Folio ships with nothing extra. Anything optional is an **adapter**, a
-small add-on you install only if you want it.
+Folio ships with nothing extra. Anything optional is an add-on you install
+only if you want it. There are two kinds ([how they differ](docs/plugins.md)):
+**plugins**, sandboxed WebAssembly extensions that can only reach what they
+declare, and **adapters**, separate programs for integrating external tools.
+Plugins go in `plugins/` in the config folder and appear in a **Plugins**
+menu; **Folio Lite**, a smaller download, leaves plugins out.
+
+The rest of this section is about adapters.
 
 **Find them in the [adapter catalog](https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md)**,
 which has direct downloads for macOS, Windows and Linux. Download the zip for

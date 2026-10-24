@@ -5,7 +5,10 @@
     Windows  dist/Folio-<version>-windows-x64.zip     folio.exe, themes, README
     Linux    dist/folio-<version>-linux-x64.tar.gz    folio, themes, install.sh
 
-Usage: python3 scripts/package.py
+--lite builds folio-lite instead: the same app without the WebAssembly
+plugin runtime (cargo's --no-default-features), named Folio-Lite-... .
+
+Usage: python3 scripts/package.py [--lite]
 """
 
 import os
@@ -48,18 +51,24 @@ def zip_dir(folder: Path, out: Path):
 def main():
     version = re.search(r'^version = "(.+)"', (ROOT / "Cargo.toml").read_text(), re.M).group(1)
     system = platform.system()
-    shutil.rmtree(DIST, ignore_errors=True)
-    DIST.mkdir()
+    lite = "--lite" in sys.argv
+    flags = ["--no-default-features"] if lite else []
+    edition = "Lite-" if lite else ""
+    # Both editions can be packed one after the other into the same dist/.
+    DIST.mkdir(exist_ok=True)
 
     if system == "Darwin":
-        run("sh", "scripts/bundle.sh")
-        out = DIST / f"Folio-{version}-macos-{arch()}.zip"
+        env = dict(os.environ, CARGO_FLAGS=" ".join(flags))
+        print("+ sh scripts/bundle.sh", " ".join(flags), flush=True)
+        subprocess.run(["sh", "scripts/bundle.sh"], cwd=ROOT, check=True, env=env)
+        out = DIST / f"Folio-{edition}{version}-macos-{arch()}.zip"
         # ditto keeps the app bundle and its signature intact.
         run("ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent", "target/Folio.app", out)
 
     elif system == "Windows":
-        run("cargo", "build", "--release")
-        stage = DIST / f"Folio-{version}-windows-{arch()}"
+        run("cargo", "build", "--release", *flags)
+        stage = DIST / f"Folio-{edition}{version}-windows-{arch()}"
+        shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir()
         shutil.copy2(ROOT / "target/release/folio.exe", stage)
         shutil.copytree(ROOT / "themes", stage / "themes")
@@ -70,8 +79,9 @@ def main():
         shutil.rmtree(stage)
 
     elif system == "Linux":
-        run("cargo", "build", "--release")
-        stage = DIST / f"folio-{version}-linux-{arch()}"
+        run("cargo", "build", "--release", *flags)
+        stage = DIST / f"folio-{edition.lower()}{version}-linux-{arch()}"
+        shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir()
         shutil.copy2(ROOT / "target/release/folio", stage)
         shutil.copytree(ROOT / "themes", stage / "themes")

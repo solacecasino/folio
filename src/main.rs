@@ -16,6 +16,7 @@ mod menu;
 mod panels;
 mod pdf;
 mod platform;
+mod plugins;
 mod safety;
 mod settings;
 mod spell;
@@ -91,6 +92,12 @@ struct Folio {
     error: Option<String>,
     menu: Option<MenuBar>,
     adapters: Host,
+    /// WebAssembly plugins (nothing in folio-lite).
+    plugins: plugins::Plugins,
+    /// The last plugin edit applied: (revision it was made against, the
+    /// revision after applying it), so a plugin's several inserts from one
+    /// event all apply.
+    plugin_edit: Option<(u64, u64)>,
     /// A short message from an adapter, and when it arrived.
     notice: Option<(String, f64)>,
     /// Last document revision adapters were told about, and when.
@@ -146,6 +153,8 @@ impl Folio {
             error: None,
             menu: None,
             adapters: host,
+            plugins: plugins::Plugins::start(&cc.egui_ctx),
+            plugin_edit: None,
             notice: None,
             sent_revision: (0, 0.0),
             appearance_for: None,
@@ -256,6 +265,7 @@ impl Folio {
                     (c.manifest.name.clone(), cmds)
                 })
                 .collect(),
+            plugins: self.plugins.commands(),
             keymap: &self.keymap,
         };
         self.menu = Some(MenuBar::install(&self.ctx, &self.icon, &content));
@@ -333,6 +343,7 @@ impl Folio {
         match std::fs::write(&path, self.editor.doc.to_json()) {
             Ok(()) => {
                 self.adapters.emit("saved", json!({ "path": path }));
+                self.plugins.saved(&path);
                 self.path = Some(path);
                 self.editor.dirty = false;
                 self.error = None;
@@ -470,6 +481,11 @@ impl Folio {
             }
             Command::Adapter(name, id) => {
                 if let Err(e) = self.adapters.run_command(&name, &id) {
+                    self.error = Some(e);
+                }
+            }
+            Command::Plugin(name, id) => {
+                if let Err(e) = self.plugins.run_command(&name, &id) {
                     self.error = Some(e);
                 }
             }
@@ -902,6 +918,29 @@ impl Folio {
         }
     }
 
+    /// Keeps plugins up to date with the document and applies what they send.
+    fn service_plugins(&mut self, now: f64) {
+        let theme = self.themes[self.theme].name.clone();
+        for effect in self.plugins.update(&self.editor, self.path.as_deref(), &theme) {
+            match effect {
+                plugins::Effect::Insert { plugin, revision, text } => {
+                    // Made against an older document: the text it meant to
+                    // replace may have moved, so it's dropped, not misplaced.
+                    let current = self.editor.revision;
+                    if revision == current || self.plugin_edit == Some((revision, current)) {
+                        self.editor.insert_at_cursor(&text, &self.themes[self.theme]);
+                        self.plugin_edit = Some((revision, self.editor.revision));
+                    } else {
+                        self.notice = Some((format!("{plugin}'s edit was skipped because the document changed"), now));
+                    }
+                }
+                plugins::Effect::Notify(message) => self.notice = Some((message, now)),
+                plugins::Effect::Problem(message) => self.error = Some(message),
+                plugins::Effect::CommandsChanged => self.rebuild_keys(),
+            }
+        }
+    }
+
     fn answer(&mut self, call: Call, now: f64) -> Result<Value, String> {
         let needs = |permission: &str| {
             if self.adapters.has_permission(call.adapter, permission) {
@@ -1129,6 +1168,7 @@ impl eframe::App for Folio {
         }
         self.dropped_files(&ctx, now);
         self.service_adapters(now);
+        self.service_plugins(now);
         self.safety_net(now);
         self.refresh_versions();
 

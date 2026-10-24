@@ -1,10 +1,11 @@
 //! Finding, compiling and starting plugins.
 //!
-//! The plugins folder (by default `~/.folio/plugins/`) holds one folder per
-//! plugin with a `plugin.toml` and its `.wasm` component:
+//! The plugins folder is `plugins/` in Folio's config folder (see
+//! [`default_plugins_dir`]). It holds one folder per plugin with a
+//! `plugin.toml` and its `.wasm` component:
 //!
 //! ```text
-//! ~/.folio/plugins/
+//! plugins/
 //! ├── word-goals/
 //! │   ├── plugin.toml
 //! │   └── word_goals.wasm
@@ -24,9 +25,35 @@ use crate::host::{Plugin, PluginPre, PluginState};
 use crate::manifest::{Capabilities, Command, MANIFEST_FILE, Manifest};
 use crate::sandbox::{self, Limits};
 
-/// `~/.folio/plugins`.
+/// `plugins/` in Folio's config folder, the same folder as its settings,
+/// themes and adapters:
+///
+/// | | |
+/// |---|---|
+/// | macOS | `~/Library/Application Support/Folio/plugins` |
+/// | Windows | `%APPDATA%\Folio\plugins` |
+/// | Linux | `$XDG_CONFIG_HOME/folio/plugins`, usually `~/.config/folio/plugins` |
+///
+/// `FOLIO_CONFIG_DIR` overrides the config folder, as it does for Folio.
 pub fn default_plugins_dir() -> PathBuf {
-    std::env::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".folio").join("plugins")
+    config_dir().join("plugins")
+}
+
+fn config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("FOLIO_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/Folio")
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA").map_or_else(|| home.join("AppData/Roaming"), PathBuf::from).join("Folio")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|d| !d.is_empty())
+            .map_or_else(|| home.join(".config"), PathBuf::from)
+            .join("folio")
+    }
 }
 
 /// A loaded plugin, as the editor sees it: enough to show it in menus and
@@ -209,6 +236,23 @@ pub(crate) async fn instantiate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugins_live_in_the_config_folder() {
+        let dir = default_plugins_dir();
+        assert!(dir.ends_with("plugins"));
+        let config = dir.parent().unwrap();
+        if std::env::var_os("FOLIO_CONFIG_DIR").is_none() {
+            let expected = if cfg!(target_os = "macos") {
+                "Library/Application Support/Folio"
+            } else if cfg!(windows) {
+                "Folio"
+            } else {
+                "folio"
+            };
+            assert!(config.ends_with(expected), "{}", config.display());
+        }
+    }
 
     #[test]
     fn discovers_folders_and_loose_components() {

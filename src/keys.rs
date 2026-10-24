@@ -79,6 +79,8 @@ pub enum Command {
     Style(String),
     /// Run an adapter's command: adapter name, command id.
     Adapter(String, String),
+    /// Run a WebAssembly plugin's command: plugin name, command id.
+    Plugin(String, String),
 }
 
 impl Command {
@@ -86,7 +88,7 @@ impl Command {
         match self {
             Command::Builtin(b) => entry(*b).2.to_owned(),
             Command::Style(s) => s.clone(),
-            Command::Adapter(_, id) => id.clone(),
+            Command::Adapter(_, id) | Command::Plugin(_, id) => id.clone(),
         }
     }
 }
@@ -101,6 +103,7 @@ impl fmt::Display for Command {
             Command::Builtin(b) => f.write_str(entry(*b).1),
             Command::Style(s) => write!(f, "style {s}"),
             Command::Adapter(name, id) => write!(f, "adapter \"{name}\" {id}"),
+            Command::Plugin(name, id) => write!(f, "plugin \"{name}\" {id}"),
         }
     }
 }
@@ -115,18 +118,25 @@ pub fn parse_command(s: &str) -> Result<Option<Command>, String> {
         return Ok(Some(Command::Style(style.trim().to_owned())));
     }
     // "component" is the older name for adapters and still works.
-    if let Some(rest) = s.strip_prefix("adapter ").or_else(|| s.strip_prefix("component ")) {
+    for (prefix, kind) in [("adapter ", "adapter"), ("component ", "adapter"), ("plugin ", "plugin")] {
+        let Some(rest) = s.strip_prefix(prefix) else { continue };
         let rest = rest.trim();
+        let usage = format!("expected: {kind} \"Name\" command-id");
         let (name, id) = if let Some(quoted) = rest.strip_prefix('"') {
-            let end = quoted.find('"').ok_or("adapter name is missing its closing quote")?;
+            let end = quoted.find('"').ok_or(format!("{kind} name is missing its closing quote"))?;
             (&quoted[..end], quoted[end + 1..].trim())
         } else {
-            rest.split_once(' ').ok_or("expected: adapter \"Name\" command-id")?
+            rest.split_once(' ').ok_or(usage.clone())?
         };
         if id.is_empty() {
-            return Err("expected: adapter \"Name\" command-id".into());
+            return Err(usage);
         }
-        return Ok(Some(Command::Adapter(name.to_owned(), id.trim().to_owned())));
+        let (name, id) = (name.to_owned(), id.trim().to_owned());
+        return Ok(Some(if kind == "plugin" {
+            Command::Plugin(name, id)
+        } else {
+            Command::Adapter(name, id)
+        }));
     }
     BUILTINS
         .iter()
@@ -381,7 +391,11 @@ mod tests {
         );
         assert_eq!(parse_command("none").unwrap(), None);
         assert!(parse_command("frobnicate").is_err());
-        for cmd in ["save-as", "style quote", "adapter \"A B\" c"] {
+        assert_eq!(
+            parse_command("plugin \"Word Goals\" set-goal").unwrap(),
+            Some(Command::Plugin("Word Goals".into(), "set-goal".into()))
+        );
+        for cmd in ["save-as", "style quote", "adapter \"A B\" c", "plugin \"A B\" c"] {
             assert_eq!(parse_command(cmd).unwrap().unwrap().to_string(), cmd, "round trips");
         }
     }

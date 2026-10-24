@@ -42,7 +42,7 @@
 //! # Ok::<(), folio_plugin::PluginError>(())
 //! ```
 //!
-//! Plugins live in `~/.folio/plugins/`, one folder each with `plugin.toml`
+//! Plugins live in `plugins/` in Folio's config folder, one folder each with `plugin.toml`
 //! and a `.wasm` component built for `wasm32-wasip2`. See
 //! `tests/guest/` for a complete plugin written in Rust.
 

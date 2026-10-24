@@ -1,13 +1,14 @@
 #!/bin/sh
 # Builds a release Folio.app in target/ with the icon, name and version.
-# Usage: scripts/bundle.sh
+# Usage: scripts/bundle.sh            (CARGO_FLAGS="--no-default-features" for folio-lite)
 set -e
 cd "$(dirname "$0")/.."
 
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 APP=target/Folio.app
 
-cargo build --release
+# shellcheck disable=SC2086  # CARGO_FLAGS is a list of flags
+cargo build --release $CARGO_FLAGS
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

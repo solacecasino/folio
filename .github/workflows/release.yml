@@ -47,8 +47,10 @@ jobs:
           cargo test -p folio_plugin
 
       - name: Package
-        run: python scripts/package.py
         shell: bash
+        run: |
+          python scripts/package.py
+          python scripts/package.py --lite   # folio-lite: no plugin runtime
 
       - uses: actions/upload-artifact@v4
         with:

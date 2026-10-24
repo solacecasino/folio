@@ -40,7 +40,7 @@ const TICK: Duration = Duration::from_millis(10);
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
 pub struct RuntimeConfig {
-    /// Where plugins are installed. Defaults to `~/.folio/plugins`.
+    /// Where plugins are installed. Defaults to [`default_plugins_dir`](crate::default_plugins_dir).
     pub plugins_dir: PathBuf,
     pub limits: Limits,
     pub waker: Option<Waker>,

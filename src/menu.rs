@@ -18,6 +18,8 @@ pub struct MenuContent<'a> {
     pub styles: Vec<String>,
     /// (adapter name, its commands)
     pub adapters: Vec<(String, Vec<AdapterItem>)>,
+    /// WebAssembly plugins' commands, shown in a Plugins menu.
+    pub plugins: Vec<crate::plugins::PluginCommand>,
     pub keymap: &'a Keymap,
 }
 
@@ -149,6 +151,18 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
         }
     }
 
+    if !content.plugins.is_empty() {
+        all.push(Section {
+            key: "plugins",
+            title: "Plugins",
+            entries: content
+                .plugins
+                .iter()
+                .map(|c| Entry::Item(Command::Plugin(c.plugin.clone(), c.id.clone()), c.label.clone()))
+                .collect(),
+        });
+    }
+
     if mac {
         all.push(Section {
             key: "window",
@@ -269,7 +283,7 @@ mod native {
     fn about(icon: &egui::IconData) -> muda::AboutMetadata {
         AboutMetadataBuilder::new()
             .name(Some("Folio"))
-            .version(Some(env!("CARGO_PKG_VERSION")))
+            .version(Some(crate::plugins::version()))
             .comments(Some("Bare when installed, insanely customizable."))
             .icon(Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok())
             .build()
@@ -378,7 +392,7 @@ mod drawn {
                         ui.vertical_centered(|ui| {
                             ui.add(egui::Image::new(&*icon).fit_to_exact_size(egui::vec2(96.0, 96.0)));
                             ui.heading("Folio");
-                            ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                            ui.label(format!("Version {}", crate::plugins::version()));
                             ui.label("Bare when installed, insanely customizable.");
                         });
                     });

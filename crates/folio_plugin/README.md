@@ -14,7 +14,7 @@ each in a sandbox that grants nothing it didn't ask for.
 ## A plugin
 
 ```text
-~/.folio/plugins/word-goals/
+<config folder>/plugins/word-goals/      e.g. ~/.config/folio/plugins on Linux
 ├── plugin.toml
 └── word_goals.wasm      cargo build --target wasm32-wasip2 --release
 ```

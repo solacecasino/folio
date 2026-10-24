@@ -1491,6 +1491,7 @@ name = "folio"
 version = "0.7.0"
 dependencies = [
  "eframe",
+ "folio_plugin",
  "libc",
  "muda",
  "objc2 0.6.5",
