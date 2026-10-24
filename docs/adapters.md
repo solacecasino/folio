@@ -25,7 +25,7 @@ Adapters used to be called *components*. Old `components/` folders,
 
 Folio ships with no adapters. Open **Folio → Adapters…** (`Cmd+Shift+A`),
 click **Add Adapter…**, and pick an adapter's `.zip` (or, below the list, a
-folder). Folio shows what it is and what it may do before adding it, and it
+folder). Dropping a zip or folder on any Folio window does the same. Folio shows what it is and what it may do before adding it, and it
 works right away, with no restart. The window lists each adapter with its
 permissions, a button for each command, and **Remove**.
 
@@ -43,6 +43,33 @@ permissions and asks you to allow it. Your answer is remembered in
 `approvals.json` in the config folder until the adapter asks for more
 permissions.
 
+## Publishing
+
+The quickest way to make and share an adapter:
+
+1. **Start from [folio-adapter-template](https://github.com/solacecasino/folio-adapter-template)**
+   ("Use this template" on GitHub). It's a working Python adapter, with
+   [`folio.py`](https://github.com/solacecasino/folio-adapters/blob/main/sdk/python/folio.py),
+   a one-file helper that handles the messages below, so a command is a few lines.
+2. **Try it** with **Add an adapter from a folder instead…** in the Adapters
+   window, or by dropping the folder on Folio. `.git`, `target/` and `dist/`
+   aren't copied.
+3. **Push a version tag** (`git tag v0.1.0 && git push origin v0.1.0`). The
+   template's workflow publishes a release with correctly named zips: one
+   for a script adapter, or one per platform (macOS, Windows, Linux) when
+   there's a `Cargo.toml`. Any repo can use the same workflow:
+   `uses: solacecasino/folio-adapters/.github/workflows/build-adapter.yml@main`.
+4. **List it** in the [catalog](https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md)
+   with the [List my adapter](https://github.com/solacecasino/folio-adapters/issues/new?template=list-my-adapter.yml)
+   form, or a pull request adding `catalog/<name>.toml` with `repo = "you/name"`.
+   The catalog reads everything else from your latest release, so new
+   releases show up there by themselves.
+
+Release zips are named `<adapter>-<version>-<platform>.zip` (`macos-arm64`,
+`windows-x64`, `linux-x64`), or `<adapter>-<version>.zip` for adapters that
+run everywhere. If someone adds a zip built for another kind of computer,
+Folio tells them which one to download instead.
+
 ## `adapter.toml`
 
 ```toml
@@ -51,6 +78,7 @@ version = "0.1.0"
 author = "you"
 license = "MIT"
 description = "One sentence about what it does."
+homepage = "https://github.com/you/writing-tools"   # shown as a link in the Adapters window
 
 run = ["python3", "main.py"]    # program + arguments, run from this folder
 permissions = ["document.read", "document.edit"]

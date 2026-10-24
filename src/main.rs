@@ -628,6 +628,35 @@ impl Folio {
         self.rebuild_keys();
     }
 
+    /// Files dropped on the window: an adapter's zip or folder is added, a
+    /// document is opened.
+    fn dropped_files(&mut self, ctx: &egui::Context, now: f64) {
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
+        for path in dropped.into_iter().filter(|p| !p.as_os_str().is_empty()) {
+            let is_zip = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+            if is_zip || path.is_dir() {
+                self.add_adapter(&path, now);
+            } else if self.confirm_discard() {
+                self.open_path(path);
+            }
+        }
+        if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+            let colors = &self.themes[self.theme].colors;
+            let (bg, fg) = (color(&colors.background), color(&colors.status));
+            let rect = ctx.content_rect().shrink(16.0);
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("drop")));
+            painter.rect_filled(rect, 12.0, bg.gamma_multiply(0.9));
+            painter.rect_stroke(rect, 12.0, egui::Stroke::new(2.0, fg), egui::StrokeKind::Inside);
+            painter.text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                "Drop a document to open it, or an adapter's .zip to add it",
+                FontId::proportional(18.0),
+                fg,
+            );
+        }
+    }
+
     fn adapter_window_action(&mut self, action: adapter_window::Action, now: f64) {
         use adapter_window::Action;
         match action {
@@ -642,7 +671,9 @@ impl Folio {
                     self.add_adapter(&source, now);
                 }
             }
+            Action::Install(path) => self.add_adapter(&path, now),
             Action::GetAdapters => self.open_external(adapter_window::GET_ADAPTERS_URL.as_ref()),
+            Action::Open(url) => self.open_external(url.as_ref()),
             Action::ShowFolder => {
                 let dir = adapters::adapters_dir();
                 let _ = std::fs::create_dir_all(&dir);
@@ -1096,6 +1127,7 @@ impl eframe::App for Folio {
         for command in commands {
             self.run(command, now);
         }
+        self.dropped_files(&ctx, now);
         self.service_adapters(now);
         self.safety_net(now);
         self.refresh_versions();

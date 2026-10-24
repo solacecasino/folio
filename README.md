@@ -108,24 +108,24 @@ See [themes/paper.toml](themes/paper.toml) for every option.
 ## Adapters
 
 Folio ships with nothing extra. Anything optional is an **adapter**, a
-small add-on you install only if you want it. Adapters live in their own repo,
-[**folio-adapters**](https://github.com/solacecasino/folio-adapters):
+small add-on you install only if you want it.
 
-| Adapter | Adds |
-|---|---|
-| pdf-export | **Export as PDF** (`Cmd+E`): print-perfect, matching the page line for line, with your theme's fonts embedded and searchable text |
-| folio-link | **Live co-editing** with people you invite, over encrypted peer-to-peer links. No accounts, no servers of ours. |
-| writing-tools | A word-count goal panel, today's date, document stats (about 100 lines of Python, a good starting point) |
+**Find them in the [adapter catalog](https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md)**,
+which has direct downloads for macOS, Windows and Linux. Download the zip for
+your computer and **drop it on the Folio window**. That's it: no restart, and
+Folio shows what the adapter can do and asks before it first runs. **Folio →
+Adapters…** (`Cmd+Shift+A`) lists what you've added, runs its commands, and
+removes it. Folio itself never goes online to do any of this.
 
-To add one, download its zip from the
-[folio-adapters releases](https://github.com/solacecasino/folio-adapters/releases).
-Then in Folio choose **Folio → Adapters…** (`Cmd+Shift+A`), click **Add
-Adapter…**, and pick the zip. It works right away, with no restart. The same
-window shows what each adapter can do, runs its commands, and removes it.
+Some to start with: **PDF Export** (print-perfect PDFs), **Folio Link** (live
+co-editing with people you invite, peer to peer) and **Writing Tools** (a
+word-count goal and document stats).
 
-Adapters can be written in any language. The first time one runs, Folio shows
-what it asks for and you decide. The protocol is in
-[docs/adapters.md](docs/adapters.md).
+**Make your own** in any language. Start from
+[folio-adapter-template](https://github.com/solacecasino/folio-adapter-template):
+a working Python adapter in about 15 lines, and a workflow that publishes it
+for every platform when you push a version tag. Listing it in the catalog is
+a form with one field. The protocol is in [docs/adapters.md](docs/adapters.md).
 
 ## Shortcuts
 

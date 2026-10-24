@@ -39,6 +39,9 @@ pub struct Manifest {
     pub license: String,
     #[serde(default)]
     pub description: String,
+    /// Where to read about it and get updates.
+    #[serde(default, alias = "repository")]
+    pub homepage: String,
     /// Program and arguments, run from the adapter's folder.
     pub run: Vec<String>,
     #[serde(default)]
@@ -666,8 +669,64 @@ pub fn stage(source: &Path) -> Result<Staged, String> {
         }
     };
     staged.manifest = load_manifest(&dir).map_err(|e| format!("Its adapter.toml has a problem: {e}"))?;
+    check_platform(&dir, &staged.manifest)?;
     staged.dir = dir;
     Ok(staged)
+}
+
+/// This computer, as release zips name it.
+pub const THIS_PLATFORM: &str = if cfg!(target_os = "macos") {
+    "macos-arm64"
+} else if cfg!(windows) {
+    "windows-x64"
+} else {
+    "linux-x64"
+};
+
+/// Refuses a compiled adapter built for another kind of computer, and says
+/// which download to get instead. Script adapters run anywhere.
+fn check_platform(dir: &Path, manifest: &Manifest) -> Result<(), String> {
+    let Some(program) = manifest.run.first().filter(|p| p.contains(['/', '\\'])) else {
+        return Ok(());
+    };
+    let path = dir.join(program);
+    let exe = path.with_extension("exe");
+    let file = [&path, &exe].into_iter().find(|p| p.is_file());
+    let wrong = |built_for: &str| {
+        Err(format!(
+            "This is the {built_for} version of {}. Download the one ending in -{THIS_PLATFORM}.zip instead.",
+            manifest.name
+        ))
+    };
+    let Some(file) = file else {
+        return Err(format!("{} is missing its program ({program}).", manifest.name));
+    };
+    let mut magic = [0u8; 20];
+    let n = std::io::Read::read(&mut std::fs::File::open(file).map_err(|e| e.to_string())?, &mut magic).unwrap_or(0);
+    let magic = &magic[..n];
+    let built_for = if magic.starts_with(b"MZ") {
+        "Windows"
+    } else if magic.starts_with(b"\x7fELF") {
+        // e_machine: x86-64 is 62, ARM64 is 183.
+        match magic.get(18) {
+            Some(183) => "Linux (ARM)",
+            _ => "Linux",
+        }
+    } else if [[0xcf, 0xfa, 0xed, 0xfe], [0xca, 0xfe, 0xba, 0xbe]].iter().any(|m| magic.starts_with(m)) {
+        "macOS"
+    } else {
+        return Ok(()); // a script or something unusual; let it try
+    };
+    let ours = if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(windows) {
+        "Windows"
+    } else if cfg!(target_arch = "aarch64") {
+        "Linux (ARM)"
+    } else {
+        "Linux"
+    };
+    if built_for == ours { Ok(()) } else { wrong(built_for) }
 }
 
 /// Installs a staged adapter into `root`, replacing any installed adapter
@@ -690,7 +749,7 @@ pub fn install_into(staged: &Staged, root: &Path, discard: &dyn Fn(&Path) -> Res
         dest = root.join(format!("{base}-{n}"));
         n += 1;
     }
-    crate::platform::copy_dir(&staged.dir, &dest).map_err(|e| format!("Couldn't copy the adapter into place: {e}"))?;
+    copy_adapter(&staged.dir, &dest).map_err(|e| format!("Couldn't copy the adapter into place: {e}"))?;
     // Downloaded files are quarantined by macOS. The person chose to install
     // this adapter, and Folio still asks before it first runs.
     if cfg!(target_os = "macos") {
@@ -700,6 +759,27 @@ pub fn install_into(staged: &Staged, root: &Path, discard: &dyn Fn(&Path) -> Res
             .status();
     }
     Ok(dest)
+}
+
+/// Copies an adapter, leaving out what a development folder has but an
+/// adapter doesn't need: `.git` and other dot-folders, and build output.
+fn copy_adapter(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') || matches!(name.as_ref(), "target" | "dist" | "__pycache__") {
+            continue;
+        }
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            crate::platform::copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn install(staged: &Staged) -> Result<PathBuf, String> {
@@ -726,6 +806,7 @@ impl Manifest {
             author: String::new(),
             license: String::new(),
             description: String::new(),
+            homepage: String::new(),
             run: Vec::new(),
             permissions: Vec::new(),
             start: Start::Command,
@@ -997,6 +1078,7 @@ for line in sys.stdin:
             author: String::new(),
             license: String::new(),
             description: String::new(),
+            homepage: String::new(),
             run: vec!["python3".into(), "fake.py".into()],
             permissions: vec![READ.into()],
             start: Start::Command,
@@ -1095,6 +1177,65 @@ for line in sys.stdin:
         let found = discover_in(&[root.join("components"), root.join("adapters")]);
         let names: Vec<&str> = found.iter().map(|a| a.manifest.name.as_str()).collect();
         assert_eq!(names, ["Legacy", "Modern"]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refuses_adapters_built_for_another_computer() {
+        let dir = temp("platform");
+        let write = |magic: &[u8]| {
+            std::fs::write(dir.join("adapter.toml"), "name = \"Tool\"\nversion = \"1\"\nrun = [\"./tool\"]\n").unwrap();
+            let _ = std::fs::remove_file(dir.join("tool"));
+            let _ = std::fs::remove_file(dir.join("tool.exe"));
+            let file = if magic.starts_with(b"MZ") { "tool.exe" } else { "tool" };
+            std::fs::write(dir.join(file), [magic, &[0u8; 32]].concat()).unwrap();
+        };
+        let ours: &[u8] = if cfg!(target_os = "macos") {
+            &[0xcf, 0xfa, 0xed, 0xfe]
+        } else if cfg!(windows) {
+            b"MZ"
+        } else {
+            b"\x7fELF"
+        };
+        write(ours);
+        assert!(stage(&dir).is_ok(), "a build for this computer installs");
+
+        let theirs: &[u8] = if cfg!(windows) { &[0xcf, 0xfa, 0xed, 0xfe] } else { b"MZ" };
+        write(theirs);
+        let err = stage(&dir).err().unwrap();
+        assert!(err.contains(&format!("-{THIS_PLATFORM}.zip")), "{err}");
+        assert!(err.contains(if cfg!(windows) { "macOS version" } else { "Windows version" }), "{err}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Runs an adapter folder, such as folio-adapter-template, through the
+    /// real host: its "count" command and a "changed" event.
+    /// `FOLIO_ADAPTER_DIR=../folio-adapter-template cargo test adapter_folder -- --ignored`
+    #[test]
+    #[ignore]
+    fn adapter_folder() {
+        let dir = PathBuf::from(std::env::var("FOLIO_ADAPTER_DIR").unwrap());
+        let staged = stage(&dir).unwrap();
+        let root = temp("folder-installed");
+        install_into(&staged, &root, &|_| Ok(())).unwrap();
+        let mut host = Host::new(discover_in(std::slice::from_ref(&root)), Arc::new(|| {}), Box::new(|_| true));
+        let name = staged.manifest.name.clone();
+        host.run_command(&name, "count").unwrap();
+        let call = wait_for(&mut host, |c| c.method == "doc.text");
+        host.reply(0, call.id.unwrap(), Ok(json!({ "text": "one two\nthree ünïcode" })));
+        let call = wait_for(&mut host, |c| c.method == "notify");
+        assert_eq!(call.params["text"], "This document has 4 words");
+        host.reply(0, call.id.unwrap(), Ok(Value::Null));
+
+        // The host shows status.set in the status line itself.
+        host.emit("changed", json!({ "words": 7, "paragraphs": 2 }));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while host.all[0].status.is_none() && Instant::now() < deadline {
+            host.poll();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(host.all[0].status.as_deref(), Some("7 words"));
+        drop(host);
         let _ = std::fs::remove_dir_all(root);
     }
 

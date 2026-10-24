@@ -7,11 +7,15 @@ use crate::adapters::{self, Host};
 use crate::keys::{Command, Keymap};
 use crate::theme::{Theme, color};
 
-pub const GET_ADAPTERS_URL: &str = "https://github.com/solacecasino/folio-adapters/releases";
+pub const GET_ADAPTERS_URL: &str = "https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md";
 
 pub enum Action {
     AddZip,
     AddFolder,
+    /// A zip or folder dropped on the window.
+    Install(std::path::PathBuf),
+    /// An adapter's homepage.
+    Open(String),
     GetAdapters,
     ShowFolder,
     Run(Command),
@@ -38,6 +42,10 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
             if ui.input(|i| i.viewport().close_requested()) {
                 actions.push(Action::Close);
             }
+            for path in ui.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect::<Vec<_>>()) {
+                actions.push(Action::Install(path));
+            }
+            let hovering = ui.input(|i| !i.raw.hovered_files.is_empty());
             ui.painter().rect_filled(ui.max_rect(), 0.0, bg);
             ui.visuals_mut().override_text_color = Some(fg);
 
@@ -49,7 +57,7 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
                         if ui.button("Show Folder").on_hover_text(reveal).clicked() {
                             actions.push(Action::ShowFolder);
                         }
-                        if ui.button("Get Adapters").on_hover_text(GET_ADAPTERS_URL).clicked() {
+                        if ui.button("Browse Adapters").on_hover_text("Opens the adapter catalog in your browser").clicked() {
                             actions.push(Action::GetAdapters);
                         }
                         if ui.button(RichText::new("Add Adapter…").strong()).clicked() {
@@ -58,8 +66,11 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
                     });
                 });
                 ui.label(
-                    RichText::new("Folio ships bare. Add only what you want; each adapter asks before it first runs.")
-                        .small(),
+                    RichText::new(
+                        "Folio ships bare. Add only what you want; each adapter asks before it first runs. \
+                         Drop an adapter's .zip here to add it.",
+                    )
+                    .small(),
                 );
                 ui.add_space(14.0);
 
@@ -78,9 +89,33 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
                     }
                 });
             });
+
+            if hovering {
+                let rect = ui.max_rect().shrink(12.0);
+                ui.painter().rect_filled(rect, CornerRadius::same(12), bg.gamma_multiply(0.92));
+                ui.painter().rect_stroke(rect, CornerRadius::same(12), Stroke::new(2.0, fg), egui::StrokeKind::Inside);
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "Drop to add this adapter",
+                    egui::FontId::proportional(20.0),
+                    fg,
+                );
+            }
         },
     );
     actions
+}
+
+/// This computer, as the catalog's download links name it.
+fn platform_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macOS (Apple Silicon)"
+    } else if cfg!(windows) {
+        "Windows"
+    } else {
+        "Linux"
+    }
 }
 
 /// Titles in the page color unless that would be invisible on the panel.
@@ -101,7 +136,7 @@ fn empty_state(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_space((ui.available_width() - 250.0).max(0.0) / 2.0);
-            if ui.button("Get Adapters").clicked() {
+            if ui.button("Browse Adapters").clicked() {
                 actions.push(Action::GetAdapters);
             }
             if ui.button("Add Adapter…").clicked() {
@@ -109,7 +144,13 @@ fn empty_state(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
             }
         });
         ui.add_space(8.0);
-        ui.label(RichText::new("Download an adapter's .zip, then choose Add Adapter… and pick it.").small());
+        ui.label(
+            RichText::new(format!(
+                "Browse Adapters opens the catalog. Download the zip for {}, then drop it here.",
+                platform_label()
+            ))
+            .small(),
+        );
     });
     ui.add_space(30.0);
 }
@@ -151,9 +192,16 @@ fn adapter_card(
             });
 
             let by: Vec<&str> = [m.author.as_str(), m.license.as_str()].into_iter().filter(|s| !s.is_empty()).collect();
-            if !by.is_empty() {
-                ui.label(RichText::new(by.join(" · ")).small());
-            }
+            ui.horizontal(|ui| {
+                if !by.is_empty() {
+                    ui.label(RichText::new(by.join(" · ")).small());
+                }
+                if (m.homepage.starts_with("https://") || m.homepage.starts_with("http://"))
+                    && ui.link(RichText::new("Homepage").small()).on_hover_text(&m.homepage).clicked()
+                {
+                    actions.push(Action::Open(m.homepage.clone()));
+                }
+            });
             if !m.description.is_empty() {
                 ui.add_space(4.0);
                 ui.label(&m.description);
