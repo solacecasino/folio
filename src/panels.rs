@@ -1,11 +1,11 @@
 //! Panels around the page: an outline, text panels written in the formatting
-//! language, and panels filled by components. They're placed by
+//! language, and panels filled by adapters. They're placed by
 //! `[[panels]]` entries in settings.toml; moving or resizing one here writes
 //! the change back there.
 
 use eframe::egui::{self, Margin, RichText, Ui};
 
-use crate::components::Host;
+use crate::adapters::Host;
 use crate::doc::Document;
 use crate::format::Format;
 use crate::keys::Command;
@@ -66,7 +66,7 @@ pub fn show(ui: &mut Ui, specs: &[PanelSpec], cx: &Context<'_>) -> Vec<Action> {
                                 ui.label(line.eval(cx.fields));
                             }
                         }
-                        PanelKind::Component => component(ui, spec, cx, &mut actions),
+                        PanelKind::Adapter => adapter(ui, spec, cx, &mut actions),
                         PanelKind::Versions => versions(ui, cx, &mut actions),
                     });
             });
@@ -85,7 +85,7 @@ fn header(ui: &mut Ui, i: usize, spec: &PanelSpec, cx: &Context<'_>, actions: &m
     let title = spec.title.clone().unwrap_or_else(|| match spec.kind {
         PanelKind::Outline => "Outline".into(),
         PanelKind::Text => String::new(),
-        PanelKind::Component => component_panel_title(spec, cx).unwrap_or_else(|| "Component".into()),
+        PanelKind::Adapter => adapter_panel_title(spec, cx).unwrap_or_else(|| "Adapter".into()),
         PanelKind::Versions => "Versions".into(),
     });
     let label = ui.add(
@@ -131,30 +131,30 @@ fn outline(ui: &mut Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
     }
 }
 
-fn component_panel_title(spec: &PanelSpec, cx: &Context<'_>) -> Option<String> {
-    let c = &cx.host.components[cx.host.index_of(spec.component.as_deref()?)?];
+fn adapter_panel_title(spec: &PanelSpec, cx: &Context<'_>) -> Option<String> {
+    let c = &cx.host.all[cx.host.index_of(spec.adapter.as_deref()?)?];
     let id = spec.id.as_deref()?;
     c.manifest.panels.iter().find(|p| p.id == id).map(|p| p.title.clone())
 }
 
-fn component(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<Action>) {
-    let (Some(name), Some(id)) = (spec.component.as_deref(), spec.id.as_deref()) else {
-        ui.label(RichText::new("Set `component` and `id` for this panel in settings.toml").weak());
+fn adapter(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<Action>) {
+    let (Some(name), Some(id)) = (spec.adapter.as_deref(), spec.id.as_deref()) else {
+        ui.label(RichText::new("Set `adapter` and `id` for this panel in settings.toml").weak());
         return;
     };
-    let Some(c) = cx.host.index_of(name).map(|i| &cx.host.components[i]) else {
+    let Some(c) = cx.host.index_of(name).map(|i| &cx.host.all[i]) else {
         ui.label(RichText::new(format!("“{name}” isn't installed")).weak());
         return;
     };
     let Some(lines) = c.panels.get(id) else {
-        ui.label(RichText::new("Waiting for the component…").weak());
+        ui.label(RichText::new("Waiting for the adapter…").weak());
         return;
     };
     for line in lines {
         match &line.command {
             Some(cmd) => {
                 if ui.link(&line.text).clicked() {
-                    actions.push(Action::Run(Command::Component(name.to_owned(), cmd.clone())));
+                    actions.push(Action::Run(Command::Adapter(name.to_owned(), cmd.clone())));
                 }
             }
             None => {

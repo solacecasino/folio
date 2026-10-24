@@ -1,7 +1,7 @@
 //! Named commands and the keymap.
 //!
 //! Every action in Folio is a command with a name (`bold`, `save`,
-//! `style h1`, `component "Writing Tools" goal`). `keys.toml` binds key
+//! `style h1`, `adapter "Writing Tools" goal`). `keys.toml` binds key
 //! combinations to command names, like mpv's input.conf, and the same table
 //! drives the menu bar's shortcuts and the in-window keyboard handling.
 
@@ -16,7 +16,6 @@ pub enum Builtin {
     Open,
     Save,
     SaveAs,
-    ExportPdf,
     Versions,
     Quit,
     Undo,
@@ -38,6 +37,7 @@ pub enum Builtin {
     Help,
     ReloadConfig,
     OpenConfigFolder,
+    OpenAdaptersFolder,
 }
 
 /// (command, name in keys.toml, menu label, default keys)
@@ -46,7 +46,6 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::Open, "open", "Open…", &["cmd+o"]),
     (Builtin::Save, "save", "Save", &["cmd+s"]),
     (Builtin::SaveAs, "save-as", "Save As…", &["cmd+shift+s"]),
-    (Builtin::ExportPdf, "export-pdf", "Export as PDF…", &["cmd+e"]),
     (Builtin::Versions, "versions", "Browse Versions…", &[]),
     (Builtin::Quit, "quit", "Quit Folio", &["cmd+q"]),
     (Builtin::Undo, "undo", "Undo", &["cmd+z"]),
@@ -68,6 +67,7 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::Help, "help", "Keyboard Shortcuts", &["cmd+/"]),
     (Builtin::ReloadConfig, "reload-config", "Reload Config", &["cmd+shift+r"]),
     (Builtin::OpenConfigFolder, "open-config-folder", "Open Config Folder", &[]),
+    (Builtin::OpenAdaptersFolder, "open-adapters-folder", "Open Adapters Folder", &[]),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -75,8 +75,8 @@ pub enum Command {
     Builtin(Builtin),
     /// Apply a paragraph style from the current theme.
     Style(String),
-    /// Run a component's command: component name, command id.
-    Component(String, String),
+    /// Run an adapter's command: adapter name, command id.
+    Adapter(String, String),
 }
 
 impl Command {
@@ -84,7 +84,7 @@ impl Command {
         match self {
             Command::Builtin(b) => entry(*b).2.to_owned(),
             Command::Style(s) => s.clone(),
-            Command::Component(_, id) => id.clone(),
+            Command::Adapter(_, id) => id.clone(),
         }
     }
 }
@@ -98,7 +98,7 @@ impl fmt::Display for Command {
         match self {
             Command::Builtin(b) => f.write_str(entry(*b).1),
             Command::Style(s) => write!(f, "style {s}"),
-            Command::Component(name, id) => write!(f, "component \"{name}\" {id}"),
+            Command::Adapter(name, id) => write!(f, "adapter \"{name}\" {id}"),
         }
     }
 }
@@ -112,18 +112,19 @@ pub fn parse_command(s: &str) -> Result<Option<Command>, String> {
     if let Some(style) = s.strip_prefix("style ") {
         return Ok(Some(Command::Style(style.trim().to_owned())));
     }
-    if let Some(rest) = s.strip_prefix("component ") {
+    // "component" is the older name for adapters and still works.
+    if let Some(rest) = s.strip_prefix("adapter ").or_else(|| s.strip_prefix("component ")) {
         let rest = rest.trim();
         let (name, id) = if let Some(quoted) = rest.strip_prefix('"') {
-            let end = quoted.find('"').ok_or("component name is missing its closing quote")?;
+            let end = quoted.find('"').ok_or("adapter name is missing its closing quote")?;
             (&quoted[..end], quoted[end + 1..].trim())
         } else {
-            rest.split_once(' ').ok_or("expected: component \"Name\" command-id")?
+            rest.split_once(' ').ok_or("expected: adapter \"Name\" command-id")?
         };
         if id.is_empty() {
-            return Err("expected: component \"Name\" command-id".into());
+            return Err("expected: adapter \"Name\" command-id".into());
         }
-        return Ok(Some(Command::Component(name.to_owned(), id.trim().to_owned())));
+        return Ok(Some(Command::Adapter(name.to_owned(), id.trim().to_owned())));
     }
     BUILTINS
         .iter()
@@ -256,7 +257,7 @@ pub struct Keymap {
 
 impl Keymap {
     /// Builds the keymap: built-in defaults, then theme style keys and
-    /// component shortcuts, then the user's `keys.toml` on top.
+    /// adapter shortcuts, then the user's `keys.toml` on top.
     /// Returns problems found in the user's file alongside the keymap.
     pub fn build(
         user: &BTreeMap<String, String>,
@@ -364,11 +365,12 @@ mod tests {
         assert_eq!(parse_command("style h2").unwrap(), Some(Command::Style("h2".into())));
         assert_eq!(
             parse_command("component \"Writing Tools\" goal").unwrap(),
-            Some(Command::Component("Writing Tools".into(), "goal".into()))
+            Some(Command::Adapter("Writing Tools".into(), "goal".into())),
+            "the old name still works"
         );
         assert_eq!(parse_command("none").unwrap(), None);
         assert!(parse_command("frobnicate").is_err());
-        for cmd in ["save-as", "style quote", "component \"A B\" c"] {
+        for cmd in ["save-as", "style quote", "adapter \"A B\" c"] {
             assert_eq!(parse_command(cmd).unwrap().unwrap().to_string(), cmd, "round trips");
         }
     }

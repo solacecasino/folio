@@ -1,7 +1,7 @@
-"""Writing Tools: a sample Folio component.
+"""Writing Tools: a sample Folio adapter.
 
-Folio and a component exchange one JSON object per line over stdin/stdout.
-See docs/components.md for the full protocol.
+Folio and an adapter exchange one JSON object per line over stdin/stdout.
+See docs/adapters.md for the full protocol.
 """
 
 import datetime

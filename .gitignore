@@ -1,4 +1,5 @@
 /target
 .DS_Store
-/components/folio-link/target
-/components/folio-link/folio-link
+/adapters/*/target
+/adapters/pdf-export/pdf-export
+/adapters/folio-link/folio-link

@@ -2,7 +2,7 @@
 //! preference is a line in a text file you can edit, copy and share.
 //!
 //! Everything lives in `~/Library/Application Support/Folio/`:
-//! `settings.toml`, `keys.toml`, `themes/`, `components/`. Sharing that one
+//! `settings.toml`, `keys.toml`, `themes/`, `adapters/`. Sharing that one
 //! folder shares a whole setup.
 
 use std::collections::BTreeMap;
@@ -53,7 +53,7 @@ pub struct Settings {
 }
 
 pub const DEFAULT_STATUS: &str =
-    "[%component_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'";
+    "[%adapter_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'";
 pub const DEFAULT_TITLE: &str = "%file%$if(%dirty%, •,)";
 
 impl Default for Settings {
@@ -93,8 +93,9 @@ pub struct PanelSpec {
     /// For `text` panels: lines in the formatting language.
     #[serde(default)]
     pub lines: Vec<String>,
-    /// For `component` panels: the component's name and panel id.
-    pub component: Option<String>,
+    /// For `adapter` panels: the adapter's name and panel id.
+    #[serde(alias = "component")]
+    pub adapter: Option<String>,
     pub id: Option<String>,
 }
 
@@ -107,7 +108,9 @@ fn default_panel_size() -> f32 {
 pub enum PanelKind {
     Outline,
     Text,
-    Component,
+    /// A panel filled by an adapter ("component" is the older name).
+    #[serde(alias = "component")]
+    Adapter,
     Versions,
 }
 
@@ -188,7 +191,7 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
             let kind = match p.kind {
                 PanelKind::Outline => "outline",
                 PanelKind::Text => "text",
-                PanelKind::Component => "component",
+                PanelKind::Adapter => "adapter",
                 PanelKind::Versions => "versions",
             };
             t["kind"] = toml_edit::value(kind);
@@ -201,8 +204,8 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
                 let lines: toml_edit::Array = p.lines.iter().map(String::as_str).collect();
                 t["lines"] = toml_edit::value(lines);
             }
-            if let Some(c) = &p.component {
-                t["component"] = toml_edit::value(c.as_str());
+            if let Some(c) = &p.adapter {
+                t["adapter"] = toml_edit::value(c.as_str());
             }
             if let Some(id) = &p.id {
                 t["id"] = toml_edit::value(id.as_str());
@@ -222,7 +225,7 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
 pub fn write_examples() {
     let dir = config_dir();
     let _ = std::fs::create_dir_all(dir.join("themes"));
-    let _ = std::fs::create_dir_all(dir.join("components"));
+    let _ = std::fs::create_dir_all(dir.join("adapters"));
     for (path, text) in [(settings_path(), EXAMPLE_SETTINGS), (keys_path(), EXAMPLE_KEYS)] {
         if !path.exists() {
             let _ = std::fs::write(path, text);
@@ -248,7 +251,7 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 
 # Status line and window title. Fields look like %words%; [ ] hides a part
 # when its fields are empty; $if, $plural, $upper and friends are functions.
-# status = "[%component_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'"
+# status = "[%adapter_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'"
 # title = "%file%$if(%dirty%, •,)"
 
 # Panels are off until you add some. Right-click a panel's title to move or
@@ -270,8 +273,8 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 # side = "right"
 #
 # [[panels]]
-# kind = "component"      # a panel provided by a component
-# component = "Writing Tools"
+# kind = "adapter"        # a panel provided by an adapter
+# adapter = "Writing Tools"
 # id = "goal"
 "#;
 
@@ -283,11 +286,11 @@ const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lin
 # Commands: new, open, save, save-as, quit, undo, redo, select-all, bold,
 # italic, underline, next-theme, zoom-in, zoom-out, zoom-reset, toggle-status,
 # toggle-panels, help, reload-config, open-config-folder,
-# style <name>, component "<Name>" <command-id>
+# style <name>, adapter "<Name>" <command-id>
 
 # "cmd+shift+h" = "style h2"
 # "cmd+t" = "none"
-# "cmd+alt+g" = 'component "Writing Tools" goal'
+# "cmd+alt+g" = 'adapter "Writing Tools" goal'
 "#;
 
 /// Notices when config files change on disk, checking about once a second.
@@ -356,7 +359,7 @@ mod tests {
             .lines()
             .filter(|l| l.starts_with("# [[panels]]") || l.starts_with("# kind") || l.starts_with("# side")
                 || l.starts_with("# size") || l.starts_with("# title") || l.starts_with("# lines")
-                || l.starts_with("# component") || l.starts_with("# id"))
+                || l.starts_with("# adapter") || l.starts_with("# id"))
             .map(|l| format!("{}\n", &l[2..]))
             .collect();
         let s: Settings = toml::from_str(&uncommented).unwrap();

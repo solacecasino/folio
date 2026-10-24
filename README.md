@@ -7,13 +7,12 @@
 Folio is a lean document editor for macOS, written in Rust. It starts as a
 blank page and a cursor: no ribbon, no template store, no account. Everything
 about how documents look comes from plain theme files you own, and everything
-extra comes from optional **components** you choose to install, in the spirit
+extra comes from optional **adapters** you choose to install, in the spirit
 of [foobar2000](https://www.foobar2000.org/).
 
 ## Features
 
 - **Real pages:** page size, margins and pagination, like a word processor; long paragraphs flow across pages
-- **Print-perfect PDF export:** the PDF matches the screen line for line, with your theme's fonts embedded and text that stays searchable (`Cmd+E`)
 - **A safety net:** autosave, crash recovery, and a version history you can browse and restore
 - **Spell check** with the macOS dictionaries, plus smart quotes, em dashes and ellipses as you type
 - **Find & replace** with match case and whole words
@@ -21,8 +20,8 @@ of [foobar2000](https://www.foobar2000.org/).
 - **Themes are files:** fonts, colors, page setup, headers and footers, and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
 - **No settings window:** `settings.toml` and `keys.toml` control everything, reload live as you save them, and every shortcut is remappable
 - **A formatting language** for the status line, window title, page headers and footers, and panels: `%words% $plural(%words%,word)[ · %selection_words% selected]`
-- **Panels you arrange:** an outline, your own stats panels, and component panels on any side, all off until you add them
-- **Components:** add-ons are separate programs in any language, approved by you, started only when used ([protocol](docs/components.md))
+- **Panels you arrange:** an outline, your own stats panels, and adapter panels on any side, all off until you add them
+- **Adapters:** everything optional is a separate add-on you choose, in any language, approved by you and started only when used
 - **Your files:** `.folio` documents are readable JSON on your own disk
 - **Small and fast:** native, no Electron, nothing running in the background
 
@@ -45,7 +44,7 @@ cargo run --release -- examples/welcome.folio   # run it
 ## Customizing
 
 Everything lives in `~/Library/Application Support/Folio/` (**Folio → Open
-Config Folder**): `settings.toml`, `keys.toml`, `themes/` and `components/`.
+Config Folder**): `settings.toml`, `keys.toml`, `themes/` and `adapters/`.
 Share that folder and you've shared your whole setup. The full guide is in
 [docs/customizing.md](docs/customizing.md).
 
@@ -93,19 +92,28 @@ next = "body"          # style after pressing Enter
 
 See [themes/paper.toml](themes/paper.toml) for every option.
 
-## Components
+## Adapters
 
-Drop a component folder into `~/Library/Application Support/Folio/components`
-and a **Components** menu appears. [components/writing-tools](components/writing-tools)
-is a small Python example with a word-count goal, a date stamp and document
-stats. The full protocol is in [docs/components.md](docs/components.md).
+Folio.app ships bare. Anything optional is an **adapter**: a small add-on you
+install only if you want it. Each release also has a **Folio-Adapters** zip;
+drag the folders you want into **Folio → Open Adapters Folder** and restart.
+
+| Adapter | Adds |
+|---|---|
+| [pdf-export](adapters/pdf-export) | **Export as PDF** (`Cmd+E`): print-perfect, matching the page line for line, with your theme's fonts embedded and searchable text |
+| [folio-link](adapters/folio-link) | **Live co-editing** with people you invite, over encrypted peer-to-peer links. No accounts, no servers of ours. ([how it works](docs/folio-link.md)) |
+| [writing-tools](adapters/writing-tools) | A word-count goal panel, today's date, document stats (about 100 lines of Python, a good starting point) |
+
+Adapters can be written in any language. The first time one runs, Folio shows
+what it asks for and you decide. The protocol is in
+[docs/adapters.md](docs/adapters.md).
 
 ## Shortcuts
 
 | | |
 |---|---|
 | `Cmd+N` / `Cmd+O` / `Cmd+S` | New, open, save |
-| `Cmd+E` | Export as PDF |
+| `Cmd+E` | Export as PDF (with the pdf-export adapter) |
 | `Cmd+F` / `Cmd+G` / `Cmd+Alt+F` | Find, find next, find and replace |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold, italic, underline |
 | `Cmd+0`–`Cmd+9` | Paragraph styles (set by the theme) |
@@ -117,7 +125,6 @@ stats. The full protocol is in [docs/components.md](docs/components.md).
 
 ## Roadmap
 
-- Collaborative editing over encrypted peer-to-peer tunnels, as a component (Folio Link)
 - Lists, links and images
 - Lua scripting for small tweaks
 - Shareable setups and a theme gallery

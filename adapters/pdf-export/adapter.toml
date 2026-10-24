@@ -1,0 +1,19 @@
+# Exports the document as a PDF. Build it with ./build.sh first.
+name = "PDF Export"
+version = "0.1.0"
+author = "Folio"
+license = "MIT"
+description = "Print-perfect PDFs that match the page exactly, with your theme's fonts embedded."
+
+# The program to start, run from this folder.
+run = ["./pdf-export"]
+
+# Reads the laid-out pages through doc.print_model.
+permissions = ["document.read"]
+start = "command"
+
+[[commands]]
+id = "export"
+label = "Export as PDF…"
+keys = "cmd+e"
+menu = "file"

@@ -1,5 +1,5 @@
 //! The native macOS menu bar, built from the keymap so it always shows the
-//! user's own shortcuts. It's rebuilt whenever keys, the theme or components
+//! user's own shortcuts. It's rebuilt whenever keys, the theme or adapters
 //! change.
 //!
 //! Menu shortcuts are taken by macOS before the window sees the key press, so
@@ -21,9 +21,16 @@ use crate::keys::{Builtin, Command, Keymap};
 pub struct MenuContent<'a> {
     /// Paragraph styles of the current theme, in order.
     pub styles: Vec<String>,
-    /// (component name, [(command id, label)])
-    pub components: Vec<(String, Vec<(String, String)>)>,
+    /// (adapter name, its commands)
+    pub adapters: Vec<(String, Vec<AdapterItem>)>,
     pub keymap: &'a Keymap,
+}
+
+pub struct AdapterItem {
+    pub id: String,
+    pub label: String,
+    /// "file", "edit", "format" or "view" to place it in that menu.
+    pub menu: Option<String>,
 }
 
 pub struct MenuBar {
@@ -56,6 +63,19 @@ impl MenuBar {
             item(command, &label)
         };
         let sep = PredefinedMenuItem::separator;
+        // Adapter commands that asked to live in one of Folio's own menus.
+        let placed = |menu: &str| -> Vec<(Command, String)> {
+            content
+                .adapters
+                .iter()
+                .flat_map(|(name, items)| {
+                    items
+                        .iter()
+                        .filter(move |i| i.menu.as_deref() == Some(menu))
+                        .map(move |i| (Command::Adapter(name.clone(), i.id.clone()), i.label.clone()))
+                })
+                .collect()
+        };
 
         let app = Submenu::with_items(
             "Folio",
@@ -64,6 +84,7 @@ impl MenuBar {
                 &PredefinedMenuItem::about(Some("About Folio"), Some(about(icon))),
                 &sep(),
                 &builtin(&mut item, Builtin::OpenConfigFolder),
+                &builtin(&mut item, Builtin::OpenAdaptersFolder),
                 &builtin(&mut item, Builtin::ReloadConfig),
                 &sep(),
                 &PredefinedMenuItem::hide(None),
@@ -83,8 +104,6 @@ impl MenuBar {
                 &builtin(&mut item, Builtin::Save),
                 &builtin(&mut item, Builtin::SaveAs),
                 &builtin(&mut item, Builtin::Versions),
-                &sep(),
-                &builtin(&mut item, Builtin::ExportPdf),
             ],
         );
         let edit = Submenu::with_items(
@@ -132,13 +151,19 @@ impl MenuBar {
             ],
         );
 
-        // Bare by default: this menu only exists once a component is installed.
-        let components = (!content.components.is_empty()).then(|| {
-            let list = Submenu::new("Components", true);
-            for (name, cmds) in &content.components {
-                let sub = Submenu::new(name, true);
-                for (id, label) in cmds {
-                    sub.append(&item(Command::Component(name.clone(), id.clone()), label))
+        // Bare by default: this menu only exists once an adapter is installed.
+        let own: Vec<(&String, Vec<&AdapterItem>)> = content
+            .adapters
+            .iter()
+            .map(|(name, items)| (name, items.iter().filter(|i| i.menu.is_none()).collect::<Vec<_>>()))
+            .filter(|(_, items)| !items.is_empty())
+            .collect();
+        let adapters = (!own.is_empty()).then(|| {
+            let list = Submenu::new("Adapters", true);
+            for (name, items) in &own {
+                let sub = Submenu::new(*name, true);
+                for i in items {
+                    sub.append(&item(Command::Adapter((*name).clone(), i.id.clone()), &i.label))
                         .expect("menu builds");
                 }
                 list.append(&sub).expect("menu builds");
@@ -154,13 +179,26 @@ impl MenuBar {
         .expect("menu builds");
 
         let menu = Menu::new();
-        for sub in [app, file, edit] {
-            menu.append(&sub.expect("menu builds")).expect("menu builds");
+        let app = app.expect("menu builds");
+        let standard = [
+            ("file", file.expect("menu builds")),
+            ("edit", edit.expect("menu builds")),
+            ("format", format),
+            ("view", view.expect("menu builds")),
+        ];
+        menu.append(&app).expect("menu builds");
+        for (key, sub) in &standard {
+            let extra = placed(key);
+            if !extra.is_empty() {
+                sub.append(&sep()).expect("menu builds");
+                for (command, label) in extra {
+                    sub.append(&item(command, &label)).expect("menu builds");
+                }
+            }
+            menu.append(sub).expect("menu builds");
         }
-        menu.append(&format).expect("menu builds");
-        menu.append(&view.expect("menu builds")).expect("menu builds");
-        if let Some(components) = &components {
-            menu.append(components).expect("menu builds");
+        if let Some(adapters) = &adapters {
+            menu.append(adapters).expect("menu builds");
         }
         menu.append(&window).expect("menu builds");
         menu.init_for_nsapp();

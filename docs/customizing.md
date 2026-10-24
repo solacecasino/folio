@@ -7,7 +7,7 @@ Folio has no settings window. Everything is a text file in one folder:
 ├── settings.toml     how Folio behaves and what's on screen
 ├── keys.toml         every keyboard shortcut
 ├── themes/           how documents look
-└── components/       add-ons
+└── adapters/         add-ons you chose to install
 ```
 
 Open it with **Folio → Open Config Folder**. Folio reloads these files as soon
@@ -58,7 +58,7 @@ comments.
 ```toml
 "cmd+shift+h" = "style h2"
 "cmd+t" = "none"                                   # free a default shortcut
-"cmd+alt+g" = 'component "Writing Tools" goal'
+"cmd+alt+g" = 'adapter "Writing Tools" goal'
 ```
 
 Modifiers: `cmd`, `shift`, `alt` (or `option`), `ctrl`. Keys: letters,
@@ -76,10 +76,10 @@ menu bar shows your shortcuts. `Cmd+/` lists every current binding.
 | `next-theme` `zoom-in` `zoom-out` `zoom-reset` | View |
 | `toggle-status` `toggle-panels` `help` | Show or hide things |
 | `reload-config` `open-config-folder` | Config |
-| `component "<Name>" <command-id>` | Run a component's command |
+| `adapter "<Name>" <command-id>` | Run an adapter's command |
 
 Themes add default `cmd+<digit>` shortcuts for styles with `key = <digit>`,
-and components add the `keys` in their manifest. Your `keys.toml` overrides both.
+and adapters add the `keys` in their manifest. Your `keys.toml` overrides both.
 
 ## The formatting language
 
@@ -110,8 +110,8 @@ modeled on foobar2000's title formatting.
 | `%dirty%` | `1` with unsaved changes, else empty |
 | `%theme%` `%style%` `%zoom%` | Current theme, paragraph style, zoom percent |
 | `%date%` `%time%` | e.g. `2026-10-23`, `14:05` |
-| `%component_status%` | Status text from all running components |
-| `%component:writing tools%` | Status text from one component (lowercase name) |
+| `%adapter_status%` | Status text from all running adapters |
+| `%adapter:writing tools%` | Status text from one adapter (lowercase name) |
 
 Examples:
 
@@ -140,8 +140,8 @@ lines = ["%words% words", "%reading_time% to read", "page %page% of %pages%"]
 kind = "versions"       # this document's saved versions; click Restore
 
 [[panels]]
-kind = "component"      # filled by a component
-component = "Writing Tools"
+kind = "adapter"        # filled by an adapter
+adapter = "Writing Tools"
 id = "goal"
 ```
 

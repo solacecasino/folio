@@ -1,8 +1,8 @@
 //! Folio: a document editor that starts bare and gets out of the way.
 //! How documents look comes from theme files; how Folio behaves comes from
-//! settings.toml and keys.toml; everything extra comes from components.
+//! settings.toml and keys.toml; everything extra comes from adapters.
 
-mod components;
+mod adapters;
 mod doc;
 mod editor;
 mod find;
@@ -24,7 +24,7 @@ use eframe::egui::{self, Align2, FontId, Sense, SystemTheme, ViewportCommand};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult};
 use serde_json::{Value, json};
 
-use components::{Call, Host};
+use adapters::{Call, Host};
 use doc::{Document, Fmt, Pos};
 use editor::Editor;
 use format::Format;
@@ -75,15 +75,18 @@ struct Folio {
     seen_revision: (u64, f64),
     safety_revision: u64,
     last_auto_version: f64,
-    /// Export as PDF runs during the next frame, where text layout is available.
-    export_pdf: bool,
+    /// `doc.print_model` requests, answered during the frame where text
+    /// layout is available: (adapter, request id).
+    pending_prints: Vec<(usize, Value)>,
+    /// (revision, cursor, anchor) last sent in a `snapshot` event.
+    sent_snapshot: Option<(u64, Pos, Pos)>,
     title: String,
     error: Option<String>,
     menu: Option<MenuBar>,
-    components: Host,
-    /// A short message from a component, and when it arrived.
+    adapters: Host,
+    /// A short message from an adapter, and when it arrived.
     notice: Option<(String, f64)>,
-    /// Last document revision components were told about, and when.
+    /// Last document revision adapters were told about, and when.
     sent_revision: (u64, f64),
     /// Background color last used to pick a light or dark window appearance.
     appearance_for: Option<egui::Color32>,
@@ -97,9 +100,9 @@ impl Folio {
         let ctx = cc.egui_ctx.clone();
         let waker = ctx.clone();
         let host = Host::new(
-            components::discover(),
+            adapters::discover(),
             Arc::new(move || waker.request_repaint()),
-            Box::new(components::approve_with_dialog),
+            Box::new(adapters::approve_with_dialog),
         );
 
         let mut app = Self {
@@ -129,11 +132,12 @@ impl Folio {
             seen_revision: (0, 0.0),
             safety_revision: 0,
             last_auto_version: f64::NEG_INFINITY,
-            export_pdf: false,
+            pending_prints: Vec::new(),
+            sent_snapshot: None,
             title: String::new(),
             error: None,
             menu: None,
-            components: host,
+            adapters: host,
             notice: None,
             sent_revision: (0, 0.0),
             appearance_for: None,
@@ -211,10 +215,10 @@ impl Folio {
             .style_keys()
             .map(|(keys, style)| (keys, Command::Style(style)))
             .collect();
-        for c in &self.components.components {
+        for c in &self.adapters.all {
             for cmd in &c.manifest.commands {
                 if let Some(keys) = &cmd.keys {
-                    defaults.push((keys.clone(), Command::Component(c.manifest.name.clone(), cmd.id.clone())));
+                    defaults.push((keys.clone(), Command::Adapter(c.manifest.name.clone(), cmd.id.clone())));
                 }
             }
         }
@@ -227,12 +231,21 @@ impl Folio {
         styles.sort_by_key(|(name, s)| (s.key.unwrap_or(u8::MAX), name.as_str()));
         let content = MenuContent {
             styles: styles.into_iter().map(|(n, _)| n.clone()).collect(),
-            components: self
-                .components
-                .components
+            adapters: self
+                .adapters
+                .all
                 .iter()
                 .map(|c| {
-                    let cmds = c.manifest.commands.iter().map(|cmd| (cmd.id.clone(), cmd.label.clone())).collect();
+                    let cmds = c
+                        .manifest
+                        .commands
+                        .iter()
+                        .map(|cmd| menu::AdapterItem {
+                            id: cmd.id.clone(),
+                            label: cmd.label.clone(),
+                            menu: cmd.menu.clone(),
+                        })
+                        .collect();
                     (c.manifest.name.clone(), cmds)
                 })
                 .collect(),
@@ -281,7 +294,7 @@ impl Folio {
                 self.editor = Editor::new(doc);
                 self.editor.zoom = zoom;
                 self.versions_stale = true;
-                self.components.emit("opened", json!({ "path": path }));
+                self.adapters.emit("opened", json!({ "path": path }));
                 self.path = Some(path);
                 self.error = None;
             }
@@ -312,7 +325,7 @@ impl Folio {
         }
         match std::fs::write(&path, self.editor.doc.to_json()) {
             Ok(()) => {
-                self.components.emit("saved", json!({ "path": path }));
+                self.adapters.emit("saved", json!({ "path": path }));
                 self.path = Some(path);
                 self.editor.dirty = false;
                 self.error = None;
@@ -448,8 +461,8 @@ impl Folio {
                     self.error = Some(format!("The {} theme has no \"{style}\" style", self.theme().name));
                 }
             }
-            Command::Component(name, id) => {
-                if let Err(e) = self.components.run_command(&name, &id) {
+            Command::Adapter(name, id) => {
+                if let Err(e) = self.adapters.run_command(&name, &id) {
                     self.error = Some(e);
                 }
             }
@@ -483,8 +496,14 @@ impl Folio {
             }
             // Goes through the normal close path, which asks about unsaved changes.
             Builtin::Quit => self.ctx.send_viewport_cmd(ViewportCommand::Close),
-            Builtin::Undo => self.editor.undo(),
-            Builtin::Redo => self.editor.redo(),
+            // During a shared session the sharing adapter undoes only your own edits.
+            Builtin::Undo | Builtin::Redo => match self.adapters.session {
+                Some((adapter, true)) => {
+                    self.adapters.notify(adapter, if b == Builtin::Undo { "undo" } else { "redo" });
+                }
+                _ if b == Builtin::Undo => self.editor.undo(),
+                _ => self.editor.redo(),
+            },
             Builtin::SelectAll => self.editor.select_all(),
             Builtin::Find | Builtin::Replace => {
                 self.find.open(b == Builtin::Replace, self.editor.selected_text());
@@ -528,7 +547,6 @@ impl Folio {
                 self.persist(|| settings::save_value("show_panels", on));
             }
             Builtin::Help => self.show_help = !self.show_help,
-            Builtin::ExportPdf => self.export_pdf = true,
             Builtin::Versions => {
                 self.show_versions = !self.show_versions;
                 self.versions_stale = true;
@@ -538,10 +556,15 @@ impl Folio {
                 self.watch.forget_own_writes();
                 self.notice = Some(("Config reloaded".into(), now));
             }
-            Builtin::OpenConfigFolder => {
+            Builtin::OpenConfigFolder | Builtin::OpenAdaptersFolder => {
                 settings::write_examples();
-                if let Err(e) = std::process::Command::new("open").arg(settings::config_dir()).spawn() {
-                    self.error = Some(format!("Couldn't open the config folder: {e}"));
+                let mut dir = settings::config_dir();
+                if b == Builtin::OpenAdaptersFolder {
+                    dir.push("adapters");
+                    self.notice = Some(("Drop adapter folders here, then restart Folio".into(), now));
+                }
+                if let Err(e) = std::process::Command::new("open").arg(dir).spawn() {
+                    self.error = Some(format!("Couldn't open the folder: {e}"));
                 }
             }
         }
@@ -637,64 +660,94 @@ impl Folio {
         if let Some(sel) = self.editor.selected_text() {
             f.insert("selection_words".into(), sel.split_whitespace().count().to_string());
         }
-        let statuses: Vec<&str> = self.components.status_items().collect();
+        let statuses: Vec<&str> = self.adapters.status_items().collect();
         if !statuses.is_empty() {
+            f.insert("adapter_status".into(), statuses.join("   "));
+            // The older name for the same field.
             f.insert("component_status".into(), statuses.join("   "));
         }
-        for c in &self.components.components {
+        for c in &self.adapters.all {
             if let Some(s) = &c.status {
+                f.insert(format!("adapter:{}", c.manifest.name.to_lowercase()), s.clone());
                 f.insert(format!("component:{}", c.manifest.name.to_lowercase()), s.clone());
             }
         }
         f
     }
 
-    // ---- Components -----------------------------------------------------------
+    // ---- Adapters -------------------------------------------------------------
 
-    /// Talks to running components: answers their requests and tells them
+    /// Talks to running adapters: answers their requests and tells them
     /// when the document changes.
-    fn service_components(&mut self, now: f64) {
-        // Component panels on screen need their component running.
+    fn service_adapters(&mut self, now: f64) {
+        // Adapter panels on screen need their adapter running.
         if self.settings.show_panels {
             let wanted: Vec<usize> = self
                 .settings
                 .panels
                 .iter()
-                .filter(|p| p.kind == PanelKind::Component)
-                .filter_map(|p| self.components.index_of(p.component.as_deref()?))
+                .filter(|p| p.kind == PanelKind::Adapter)
+                .filter_map(|p| self.adapters.index_of(p.adapter.as_deref()?))
                 .collect();
             for i in wanted {
-                if let Err(e) = self.components.ensure_running(i) {
+                if let Err(e) = self.adapters.ensure_running(i) {
                     self.error = Some(e);
                 }
             }
         }
 
-        let (calls, errors) = self.components.poll();
+        let (calls, errors) = self.adapters.poll();
         if let Some(e) = errors.into_iter().last() {
             self.error = Some(e);
         }
         for call in calls {
-            let component = call.component;
+            let adapter = call.adapter;
             let id = call.id.clone();
+            if call.method == "doc.print_model" {
+                match (id, self.adapters.has_permission(adapter, adapters::READ)) {
+                    (Some(id), true) => self.pending_prints.push((adapter, id)),
+                    (Some(id), false) => self.adapters.reply(adapter, id, Err(needs_permission(adapters::READ))),
+                    (None, _) => {}
+                }
+                continue;
+            }
             let result = self.answer(call, now);
             match id {
-                Some(id) => self.components.reply(component, id, result),
+                Some(id) => self.adapters.reply(adapter, id, result),
                 None => {
                     if let Err(e) = result {
-                        eprintln!("folio: component message failed: {e}");
+                        eprintln!("folio: adapter message failed: {e}");
                     }
                 }
             }
         }
 
+        // Sharing adapters get the whole document on every change, right away,
+        // and when the caret moves (so others see where you are).
+        let fresh = std::mem::take(&mut self.adapters.just_started);
+        let state = (self.editor.revision, self.editor.cursor(), self.editor.anchor());
+        if self.adapters.wants("snapshot") && (fresh || self.sent_snapshot != Some(state)) {
+            let doc: Value = serde_json::from_str(&self.editor.doc.to_json()).unwrap_or_default();
+            let at = |p: Pos| json!({ "para": p.para, "ch": p.ch });
+            self.adapters.emit(
+                "snapshot",
+                json!({
+                    "revision": state.0,
+                    "paragraphs": doc["paragraphs"],
+                    "cursor": at(state.1),
+                    "anchor": at(state.2),
+                }),
+            );
+            self.sent_snapshot = Some(state);
+        }
+        self.editor.peers = self.adapters.peers.clone();
+
         // Typing changes the document constantly, so send at most ~3 updates a
-        // second. A component that just started gets the current state right away.
+        // second. An adapter that just started gets the current state right away.
         let (sent, at) = self.sent_revision;
-        let fresh = std::mem::take(&mut self.components.just_started);
         if fresh || (self.editor.revision != sent && now - at > 0.3) {
             let doc = &self.editor.doc;
-            self.components.emit(
+            self.adapters.emit(
                 "changed",
                 json!({ "words": doc.word_count(), "paragraphs": doc.paragraphs.len() }),
             );
@@ -704,10 +757,10 @@ impl Folio {
 
     fn answer(&mut self, call: Call, now: f64) -> Result<Value, String> {
         let needs = |permission: &str| {
-            if self.components.has_permission(call.component, permission) {
+            if self.adapters.has_permission(call.adapter, permission) {
                 Ok(())
             } else {
-                Err(format!("this needs the \"{permission}\" permission in component.toml"))
+                Err(needs_permission(permission))
             }
         };
         let text_param = || {
@@ -720,25 +773,25 @@ impl Folio {
 
         match call.method.as_str() {
             "doc.get" => {
-                needs(components::READ)?;
+                needs(adapters::READ)?;
                 let mut doc: Value = serde_json::from_str(&self.editor.doc.to_json()).map_err(|e| e.to_string())?;
                 doc["path"] = json!(self.path);
                 doc["theme"] = json!(self.theme().name);
                 Ok(doc)
             }
             "doc.text" => {
-                needs(components::READ)?;
+                needs(adapters::READ)?;
                 let doc = &self.editor.doc;
                 Ok(json!({ "text": doc.text(Pos::default(), doc.end()) }))
             }
             "doc.insert" => {
-                needs(components::EDIT)?;
+                needs(adapters::EDIT)?;
                 let text = text_param()?;
                 self.editor.insert_at_cursor(&text, &self.themes[self.theme]);
                 Ok(Value::Null)
             }
             "doc.replace" => {
-                needs(components::EDIT)?;
+                needs(adapters::EDIT)?;
                 let mut params = call.params.clone();
                 params["folio"] = json!(1);
                 let mut doc = Document::from_json(&params.to_string())?;
@@ -749,6 +802,32 @@ impl Folio {
             "notify" => {
                 self.notice = Some((text_param()?, now));
                 Ok(Value::Null)
+            }
+            "doc.merge" => {
+                needs(adapters::EDIT)?;
+                Ok(json!({ "applied": self.editor.apply_merge(&call.params)? }))
+            }
+            "ui.confirm" => {
+                let param = |key: &str| call.params.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+                let yes = MessageDialog::new()
+                    .set_title(param("title"))
+                    .set_description(param("message"))
+                    .set_buttons(MessageButtons::YesNo)
+                    .show()
+                    == MessageDialogResult::Yes;
+                Ok(json!(yes))
+            }
+            "ui.save_dialog" => {
+                let param = |key: &str| call.params.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+                let mut dialog = FileDialog::new().set_title(param("title")).set_file_name(param("file_name"));
+                let extension = param("extension");
+                if !extension.is_empty() {
+                    dialog = dialog.add_filter(extension.to_uppercase(), &[extension.as_str()]);
+                }
+                if let Some(dir) = self.path.as_deref().and_then(|p| p.parent()) {
+                    dialog = dialog.set_directory(dir);
+                }
+                Ok(dialog.save_file().map_or(Value::Null, |p| json!(p)))
             }
             other => Err(format!("unknown method \"{other}\"")),
         }
@@ -895,7 +974,7 @@ impl eframe::App for Folio {
         for command in commands {
             self.run(command, now);
         }
-        self.service_components(now);
+        self.service_adapters(now);
         self.safety_net(now);
         self.refresh_versions();
 
@@ -914,7 +993,7 @@ impl eframe::App for Folio {
                 cursor_para: self.editor.cursor().para,
                 text_lines: &self.panel_lines,
                 fields: &field,
-                host: &self.components,
+                host: &self.adapters,
                 versions: &self.versions,
             };
             let actions = panels::show(&mut body_ui, &self.settings.panels, &cx);
@@ -953,19 +1032,15 @@ impl eframe::App for Folio {
             };
             (header.eval(&page_field), footer.eval(&page_field))
         };
-        let exported = std::mem::take(&mut self.export_pdf).then(|| {
+        if !self.pending_prints.is_empty() {
             let model = self.editor.print_model(&page_ui, &self.themes[self.theme], &self.fonts, &page_text);
-            export_pdf(&model, self.path.as_deref())
-        });
-        self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text, self.speller.as_mut());
-        match exported {
-            Some(Ok(Some(path))) => {
-                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                self.notice = Some((format!("Exported {name}"), now));
+            let title = values.get("file").cloned().unwrap_or_default();
+            let json = pdf::to_json(&model, &title);
+            for (adapter, id) in std::mem::take(&mut self.pending_prints) {
+                self.adapters.reply(adapter, id, json.clone());
             }
-            Some(Err(e)) => self.error = Some(e),
-            _ => {}
         }
+        self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text, self.speller.as_mut());
 
         if self.show_versions {
             self.versions_window(&ctx);
@@ -983,19 +1058,8 @@ impl eframe::App for Folio {
     }
 }
 
-/// Asks where to save, then writes the PDF. Ok(None) means the user cancelled.
-fn export_pdf(model: &pdf::Model, doc_path: Option<&std::path::Path>) -> Result<Option<PathBuf>, String> {
-    let stem = doc_path
-        .and_then(|p| p.file_stem())
-        .map_or("Untitled".to_owned(), |s| s.to_string_lossy().into_owned());
-    let mut dialog = FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{stem}.pdf"));
-    if let Some(dir) = doc_path.and_then(|p| p.parent()) {
-        dialog = dialog.set_directory(dir);
-    }
-    let Some(path) = dialog.save_file() else { return Ok(None) };
-    let bytes = pdf::render(model, &stem)?;
-    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't save the PDF: {e}"))?;
-    Ok(Some(path))
+fn needs_permission(permission: &str) -> String {
+    format!("this needs the \"{permission}\" permission in adapter.toml")
 }
 
 /// Local date (YYYY-MM-DD) and time (HH:MM).

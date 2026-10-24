@@ -156,6 +156,8 @@ pub struct Editor {
     pub smart_dashes: bool,
     /// The misspelled word that was right-clicked, with its suggestions.
     spell_target: Option<SpellTarget>,
+    /// Other people editing with you (from a sharing adapter).
+    pub peers: Vec<crate::adapters::Peer>,
 }
 
 #[derive(Clone)]
@@ -193,6 +195,7 @@ impl Editor {
             smart_quotes: true,
             smart_dashes: true,
             spell_target: None,
+            peers: Vec::new(),
         }
     }
 
@@ -335,6 +338,43 @@ impl Editor {
     /// Inserts text at the caret (replacing any selection), as one undo step.
     pub fn insert_at_cursor(&mut self, text: &str, theme: &Theme) {
         self.insert_text(text, theme, EditKind::Other);
+    }
+
+    /// Takes in a document merged with other people's edits. Not an undo
+    /// step: during a shared session, undo belongs to the sharing adapter.
+    pub fn merge_document(&mut self, doc: Document, cursor: Pos, anchor: Pos) {
+        self.doc = doc;
+        self.cursor = self.doc.clamp(cursor);
+        self.anchor = self.doc.clamp(anchor);
+        // Old snapshots would undo other people's work, so they're dropped.
+        self.undo.clear();
+        self.redo.clear();
+        self.last_edit = None;
+        self.dirty = true;
+        self.revision += 1;
+    }
+
+    /// Handles a `doc.merge` request. The adapter's document is taken only if
+    /// it was based on the current revision; otherwise the adapter waits for
+    /// the next snapshot and tries again. Returns whether it was applied.
+    pub fn apply_merge(&mut self, params: &serde_json::Value) -> Result<bool, String> {
+        let base = params.get("base_revision").and_then(serde_json::Value::as_u64);
+        if base != Some(self.revision) {
+            return Ok(false);
+        }
+        let mut file = params.clone();
+        file["folio"] = 1.into();
+        let mut doc = Document::from_json(&file.to_string())?;
+        doc.theme = self.doc.theme.clone();
+        doc.id = self.doc.id.clone();
+        let cursor = params.get("cursor").and_then(crate::adapters::pos).unwrap_or(self.cursor);
+        let anchor = params.get("anchor").and_then(crate::adapters::pos).unwrap_or(cursor);
+        self.merge_document(doc, cursor, anchor);
+        Ok(true)
+    }
+
+    pub fn anchor(&self) -> Pos {
+        self.anchor
     }
 
     /// Swaps in a whole new document, as one undo step.
@@ -969,6 +1009,14 @@ impl Editor {
             painter.rect_stroke(r, CornerRadius::ZERO, Stroke::new(1.0, border), StrokeKind::Outside);
         }
 
+        // Other people's selections, faintly in their colors.
+        for peer in &self.peers {
+            let (a, b) = (self.doc.clamp(peer.anchor), self.doc.clamp(peer.cursor));
+            if a != b {
+                self.paint_range(painter, layout, offset, a.min(b), a.max(b), color(&peer.color).gamma_multiply(0.3));
+            }
+        }
+
         let highlight = color(colors.find.as_deref().unwrap_or("#ffcc0055"));
         for &(a, b) in &self.highlights {
             self.paint_range(painter, layout, offset, a, b, highlight);
@@ -1120,6 +1168,18 @@ impl Editor {
             }
         }
 
+        // Other people's carets, with their names.
+        for peer in &self.peers {
+            let caret = self.caret_rect(layout, self.doc.clamp(peer.cursor)).translate(offset);
+            let c = color(&peer.color);
+            let w = (2.0 * self.zoom).max(1.5);
+            painter.rect_filled(Rect::from_x_y_ranges(caret.min.x..=caret.min.x + w, caret.y_range()), 0.0, c);
+            let label = painter.layout_no_wrap(peer.name.clone(), FontId::proportional(10.0), Color32::WHITE);
+            let tag = Rect::from_min_size(caret.min - vec2(0.0, label.size().y + 2.0), label.size() + vec2(6.0, 2.0));
+            painter.rect_filled(tag, 3.0, c);
+            painter.galley(tag.min + vec2(3.0, 1.0), label, Color32::WHITE);
+        }
+
         let caret = self.caret_rect(layout, self.cursor).translate(offset);
         let t = ui.input(|i| i.time) - self.blink_start;
         if ui.ctx().input(|i| i.focused) && t % 1.0 < 0.6 {
@@ -1199,6 +1259,30 @@ mod tests {
     }
 
     #[test]
+    fn merges_only_on_the_current_revision() {
+        let mut ed = typed("hello");
+        let rev = ed.revision;
+        let remote = serde_json::json!({
+            "base_revision": rev,
+            "paragraphs": [{"style": "body", "runs": [{"text": "hello "}, {"text": "world", "bold": true}]}],
+            "cursor": {"para": 0, "ch": 5},
+        });
+        let mut stale = remote.clone();
+        stale["base_revision"] = (rev - 1).into();
+
+        assert!(!ed.apply_merge(&stale).unwrap(), "a merge based on an old revision is refused");
+        assert_eq!(plain(&ed), "hello");
+
+        assert!(ed.apply_merge(&remote).unwrap());
+        assert_eq!(plain(&ed), "hello world");
+        assert!(ed.doc.paragraphs[0].fmts[8].bold, "formatting comes through");
+        assert_eq!(ed.cursor(), Pos::new(0, 5), "the caret stays where the adapter put it");
+        assert_eq!(ed.revision, rev + 1);
+        ed.undo();
+        assert_eq!(plain(&ed), "hello world", "undo can't take back other people's edits");
+    }
+
+    #[test]
     fn replace_all_is_one_undo_step() {
         let theme: Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
         let mut doc = Document::default();
@@ -1251,11 +1335,11 @@ mod tests {
                 assert!(t.y > 0.0 && t.y < 792.0 && t.x >= 0.0 && t.x < 612.0, "{} at {},{}", t.text, t.x, t.y);
             }
         }
-        assert!(!crate::pdf::render(&model, "t").unwrap().is_empty());
+        assert!(crate::pdf::to_json(&model, "t").is_ok());
     }
 
-    /// `FOLIO_PDF_OUT=/path/out.pdf cargo test export_sample -- --ignored`
-    /// writes examples/welcome.folio as a PDF, for checking by eye.
+    /// `FOLIO_MODEL_OUT=/path/model.json cargo test export_sample -- --ignored`
+    /// writes examples/welcome.folio's print model, for testing the PDF adapter.
     #[test]
     #[ignore]
     fn export_sample() {
@@ -1271,8 +1355,9 @@ mod tests {
             });
             out.textures_delta.clear();
         }
-        let path = std::env::var("FOLIO_PDF_OUT").unwrap_or_else(|_| "welcome.pdf".into());
-        std::fs::write(path, crate::pdf::render(&model.unwrap(), "Welcome").unwrap()).unwrap();
+        let path = std::env::var("FOLIO_MODEL_OUT").unwrap_or_else(|_| "welcome-model.json".into());
+        let json = crate::pdf::to_json(&model.unwrap(), "welcome").unwrap();
+        std::fs::write(path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     }
 
     #[test]
