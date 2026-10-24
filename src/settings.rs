@@ -38,6 +38,18 @@ pub struct Settings {
     /// Window title, in the formatting language.
     pub title: String,
     pub panels: Vec<PanelSpec>,
+    /// Save named documents a moment after you stop typing.
+    pub autosave: bool,
+    /// Snapshots kept per document in the config folder's versions/ (0 = off).
+    pub versions: usize,
+    /// macOS spell checking with red underlines.
+    pub spellcheck: bool,
+    /// A language code like "en" or "fr"; empty uses the system language.
+    pub spell_language: String,
+    /// Curly quotes as you type.
+    pub smart_quotes: bool,
+    /// -- becomes — and ... becomes …
+    pub smart_dashes: bool,
 }
 
 pub const DEFAULT_STATUS: &str =
@@ -54,11 +66,20 @@ impl Default for Settings {
             status: DEFAULT_STATUS.into(),
             title: DEFAULT_TITLE.into(),
             panels: Vec::new(),
+            autosave: true,
+            versions: 50,
+            spellcheck: true,
+            spell_language: String::new(),
+            smart_quotes: true,
+            smart_dashes: true,
         }
     }
 }
 
-const KNOWN_KEYS: &[&str] = &["theme", "zoom", "show_status", "show_panels", "status", "title", "panels"];
+const KNOWN_KEYS: &[&str] = &[
+    "theme", "zoom", "show_status", "show_panels", "status", "title", "panels", "autosave", "versions",
+    "spellcheck", "spell_language", "smart_quotes", "smart_dashes",
+];
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct PanelSpec {
@@ -87,6 +108,7 @@ pub enum PanelKind {
     Outline,
     Text,
     Component,
+    Versions,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -167,6 +189,7 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
                 PanelKind::Outline => "outline",
                 PanelKind::Text => "text",
                 PanelKind::Component => "component",
+                PanelKind::Versions => "versions",
             };
             t["kind"] = toml_edit::value(kind);
             t["side"] = toml_edit::value(p.side.name());
@@ -215,6 +238,14 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 # zoom = 1.0
 # show_status = true
 
+# Writing
+# autosave = true          # save named documents 2 seconds after you stop typing
+# versions = 50            # snapshots kept per document (File → Browse Versions); 0 turns it off
+# spellcheck = true
+# spell_language = "en"    # empty = your system language
+# smart_quotes = true      # "curly" quotes as you type
+# smart_dashes = true      # -- becomes — and ... becomes …
+
 # Status line and window title. Fields look like %words%; [ ] hides a part
 # when its fields are empty; $if, $plural, $upper and friends are functions.
 # status = "[%component_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'"
@@ -233,6 +264,10 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 # side = "right"
 # title = "Stats"
 # lines = ["%words% words", "%chars% characters", "%reading_time% to read", "page %page% of %pages%"]
+#
+# [[panels]]
+# kind = "versions"       # earlier versions of this document, click to restore
+# side = "right"
 #
 # [[panels]]
 # kind = "component"      # a panel provided by a component
@@ -325,7 +360,7 @@ mod tests {
             .map(|l| format!("{}\n", &l[2..]))
             .collect();
         let s: Settings = toml::from_str(&uncommented).unwrap();
-        assert_eq!(s.panels.len(), 3);
+        assert_eq!(s.panels.len(), 4);
         assert_eq!(s.panels[1].lines.len(), 4);
         for line in &s.panels[1].lines {
             Format::parse(line).unwrap();

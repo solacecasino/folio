@@ -44,6 +44,8 @@ pub struct PageSetup {
     /// e.g. `footer = "%page% / %pages%"`.
     pub header: Option<String>,
     pub footer: Option<String>,
+    /// Print the page color in PDFs (otherwise pages are white paper).
+    pub print_background: bool,
 }
 
 impl Default for PageSetup {
@@ -58,6 +60,7 @@ impl Default for PageSetup {
             gap: 0.3,
             header: None,
             footer: None,
+            print_background: false,
         }
     }
 }
@@ -75,6 +78,8 @@ pub struct Colors {
     /// Panel background and text; default to `background` and `status`.
     pub panel: Option<String>,
     pub panel_text: Option<String>,
+    /// Highlight behind find matches.
+    pub find: Option<String>,
 }
 
 impl Default for Colors {
@@ -89,6 +94,7 @@ impl Default for Colors {
             status: "#b0b0b0".into(),
             panel: None,
             panel_text: None,
+            find: None,
         }
     }
 }
@@ -282,6 +288,8 @@ pub fn color(s: &str) -> Color32 {
 #[derive(Default)]
 pub struct FontMap {
     faces: HashMap<(String, bool, bool), FontFamily>,
+    /// The font file behind each face, for embedding in PDFs.
+    paths: HashMap<(String, bool, bool), PathBuf>,
 }
 
 pub struct Face {
@@ -290,20 +298,32 @@ pub struct Face {
 }
 
 impl FontMap {
+    /// The face to use for a style, falling back to the nearest one that
+    /// exists. Returns None when the theme has no file for the family at all.
+    fn resolve(&self, family: &str, bold: bool, italic: bool) -> (Option<(String, bool, bool)>, bool) {
+        let key = |b, i| (family.to_owned(), b, i);
+        if self.faces.contains_key(&key(bold, italic)) {
+            return (Some(key(bold, italic)), false);
+        }
+        let fallback = [key(bold, false), key(false, italic), key(false, false)]
+            .into_iter()
+            .find(|k| self.faces.contains_key(k));
+        (fallback, italic)
+    }
+
     pub fn face(&self, family: &str, bold: bool, italic: bool) -> Face {
-        let get = |b, i| self.faces.get(&(family.to_owned(), b, i)).cloned();
-        if let Some(f) = get(bold, italic) {
-            return Face { family: f, synthetic_italic: false };
-        }
-        // Fall back to the nearest face that exists.
-        let fallback = get(bold, false)
-            .or_else(|| get(false, italic))
-            .or_else(|| get(false, false))
-            .unwrap_or(FontFamily::Proportional);
+        let (key, synthetic_italic) = self.resolve(family, bold, italic);
         Face {
-            family: fallback,
-            synthetic_italic: italic,
+            family: key.and_then(|k| self.faces.get(&k).cloned()).unwrap_or(FontFamily::Proportional),
+            synthetic_italic,
         }
+    }
+
+    /// The font file for a style (None means egui's built-in font), and
+    /// whether italics must be faked by slanting.
+    pub fn file(&self, family: &str, bold: bool, italic: bool) -> (Option<PathBuf>, bool) {
+        let (key, synthetic_italic) = self.resolve(family, bold, italic);
+        (key.and_then(|k| self.paths.get(&k).cloned()), synthetic_italic)
     }
 }
 
@@ -326,6 +346,7 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
             for (bold, italic, file) in variants {
                 let Some(file) = file else { continue };
                 let path = theme.resolve_path(file);
+                let font_path = path.clone();
                 let key = match loaded.get(&path) {
                     Some(k) => k.clone(),
                     None => {
@@ -344,8 +365,9 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
                 let mut chain = vec![key];
                 chain.extend(builtin.iter().cloned());
                 defs.families.insert(egui_family.clone(), chain);
-                map.faces
-                    .insert((format!("{}:{family}", theme.name), bold, italic), egui_family);
+                let face_key = (format!("{}:{family}", theme.name), bold, italic);
+                map.faces.insert(face_key.clone(), egui_family);
+                map.paths.insert(face_key, font_path);
             }
         }
     }

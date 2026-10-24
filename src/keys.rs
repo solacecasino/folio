@@ -16,10 +16,16 @@ pub enum Builtin {
     Open,
     Save,
     SaveAs,
+    ExportPdf,
+    Versions,
     Quit,
     Undo,
     Redo,
     SelectAll,
+    Find,
+    FindNext,
+    FindPrevious,
+    Replace,
     Bold,
     Italic,
     Underline,
@@ -40,10 +46,16 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::Open, "open", "Open…", &["cmd+o"]),
     (Builtin::Save, "save", "Save", &["cmd+s"]),
     (Builtin::SaveAs, "save-as", "Save As…", &["cmd+shift+s"]),
+    (Builtin::ExportPdf, "export-pdf", "Export as PDF…", &["cmd+e"]),
+    (Builtin::Versions, "versions", "Browse Versions…", &[]),
     (Builtin::Quit, "quit", "Quit Folio", &["cmd+q"]),
     (Builtin::Undo, "undo", "Undo", &["cmd+z"]),
     (Builtin::Redo, "redo", "Redo", &["cmd+shift+z"]),
     (Builtin::SelectAll, "select-all", "Select All", &["cmd+a"]),
+    (Builtin::Find, "find", "Find…", &["cmd+f"]),
+    (Builtin::FindNext, "find-next", "Find Next", &["cmd+g"]),
+    (Builtin::FindPrevious, "find-previous", "Find Previous", &["cmd+shift+g"]),
+    (Builtin::Replace, "replace", "Find and Replace…", &["cmd+alt+f"]),
     (Builtin::Bold, "bold", "Bold", &["cmd+b"]),
     (Builtin::Italic, "italic", "Italic", &["cmd+i"]),
     (Builtin::Underline, "underline", "Underline", &["cmd+u"]),
@@ -297,7 +309,8 @@ impl Keymap {
     }
 
     /// Takes key presses that match a binding out of this frame's input.
-    pub fn take_commands(&self, ctx: &egui::Context) -> Vec<Command> {
+    /// Bindings whose command `allow` rejects are left for other widgets.
+    pub fn take_commands(&self, ctx: &egui::Context, allow: impl Fn(&Command) -> bool) -> Vec<Command> {
         let mut out = Vec::new();
         ctx.input_mut(|i| {
             i.events.retain(|e| {
@@ -311,11 +324,11 @@ impl Keymap {
                     return true;
                 };
                 match self.bindings.iter().find(|b| b.chord.matches(*key, *modifiers)) {
-                    Some(b) => {
+                    Some(b) if allow(&b.command) => {
                         out.push(b.command.clone());
                         false
                     }
-                    None => true,
+                    _ => true,
                 }
             });
         });

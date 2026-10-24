@@ -28,6 +28,27 @@ status = "%words% words"   # the status line, in the formatting language
 title = "%file%$if(%dirty%, •,)"
 ```
 
+### Writing
+
+```toml
+autosave = true            # save named documents 2 seconds after you stop typing
+versions = 50              # snapshots kept per document; 0 turns it off
+spellcheck = true          # the macOS spell checker, with your learned words
+spell_language = "en"      # empty = your system language
+smart_quotes = true        # "straight" becomes “curly” as you type
+smart_dashes = true        # -- becomes —, ... becomes …
+```
+
+- **Autosave** only saves documents that already have a file. Unsaved work
+  is kept in `recovery/` instead, and if Folio ever closes unexpectedly it
+  offers that work back the next time it opens.
+- **Versions** are written to `versions/` each time you save (and at most
+  every five minutes while autosaving). **File → Browse Versions…** lists
+  them; Restore can be undone with Cmd+Z. They're ordinary `.folio` files.
+- Right-click a word with a red underline for suggestions, **Learn
+  Spelling** (adds it to your Mac's dictionary) or **Ignore Spelling**.
+- Cmd+Z right after a smart quote or dash gives back the plain character.
+
 Every line is optional. Folio writes `theme`, `zoom`, `show_status`,
 `show_panels` and `panels` back when you change them in the app, keeping your
 comments.
@@ -47,8 +68,9 @@ menu bar shows your shortcuts. `Cmd+/` lists every current binding.
 
 | Command | Does |
 |---|---|
-| `new` `open` `save` `save-as` `quit` | Files |
+| `new` `open` `save` `save-as` `export-pdf` `versions` `quit` | Files |
 | `undo` `redo` `select-all` | Editing |
+| `find` `find-next` `find-previous` `replace` | Find & replace |
 | `bold` `italic` `underline` | Inline formatting |
 | `style <name>` | Apply a paragraph style from the theme |
 | `next-theme` `zoom-in` `zoom-out` `zoom-reset` | View |
@@ -115,6 +137,9 @@ title = "Stats"
 lines = ["%words% words", "%reading_time% to read", "page %page% of %pages%"]
 
 [[panels]]
+kind = "versions"       # this document's saved versions; click Restore
+
+[[panels]]
 kind = "component"      # filled by a component
 component = "Writing Tools"
 id = "goal"
@@ -136,8 +161,10 @@ also set:
 [page]
 header = "%file%"
 footer = "%page% / %pages%"
+print_background = false   # true prints the page color in PDFs
 
 [colors]
 panel = "#2a2a2a"
 panel_text = "#cccccc"
+find = "#ffcc0055"         # highlight behind find matches
 ```

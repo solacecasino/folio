@@ -72,6 +72,9 @@ pub struct Document {
     pub paragraphs: Vec<Paragraph>,
     /// Theme the document was last saved with, if any.
     pub theme: Option<String>,
+    /// Stable id, given on first save, so version history follows the
+    /// document when it's renamed or moved.
+    pub id: Option<String>,
 }
 
 impl Default for Document {
@@ -79,6 +82,7 @@ impl Default for Document {
         Self {
             paragraphs: vec![Paragraph::new("body")],
             theme: None,
+            id: None,
         }
     }
 }
@@ -230,6 +234,33 @@ impl Document {
         Pos::new(p.para, i)
     }
 
+    /// Every match of `query` (within single paragraphs), in document order.
+    pub fn find_all(&self, query: &str, match_case: bool, whole_word: bool) -> Vec<(Pos, Pos)> {
+        let fold = |c: char| if match_case { c } else { c.to_lowercase().next().unwrap_or(c) };
+        let needle: Vec<char> = query.chars().map(fold).collect();
+        if needle.is_empty() || needle.contains(&'\n') {
+            return Vec::new();
+        }
+        let mut found = Vec::new();
+        for (i, para) in self.paragraphs.iter().enumerate() {
+            let hay: Vec<char> = para.chars.iter().copied().map(fold).collect();
+            let mut start = 0;
+            while start + needle.len() <= hay.len() {
+                let end = start + needle.len();
+                let is_word = |k: Option<&char>| k.is_some_and(|c| c.is_alphanumeric());
+                let bounded = !whole_word
+                    || (!is_word(start.checked_sub(1).and_then(|k| hay.get(k))) && !is_word(hay.get(end)));
+                if hay[start..end] == needle[..] && bounded {
+                    found.push((Pos::new(i, start), Pos::new(i, end)));
+                    start = end;
+                } else {
+                    start += 1;
+                }
+            }
+        }
+        found
+    }
+
     pub fn word_count(&self) -> usize {
         self.paragraphs
             .iter()
@@ -251,6 +282,8 @@ impl Document {
 #[derive(Serialize, Deserialize)]
 struct FileDoc {
     folio: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     theme: Option<String>,
     paragraphs: Vec<FilePara>,
@@ -274,6 +307,7 @@ impl Document {
     pub fn to_json(&self) -> String {
         let file = FileDoc {
             folio: 1,
+            id: self.id.clone(),
             theme: self.theme.clone(),
             paragraphs: self
                 .paragraphs
@@ -313,6 +347,7 @@ impl Document {
         Ok(Self {
             paragraphs,
             theme: file.theme,
+            id: file.id,
         })
     }
 }
@@ -334,6 +369,25 @@ mod tests {
         d.delete(Pos::new(0, 3), Pos::new(1, 2));
         assert_eq!(plain(&d), "helrld");
         assert_eq!(d.paragraphs.len(), 1);
+    }
+
+    #[test]
+    fn find_respects_case_and_whole_words() {
+        let mut d = Document::default();
+        d.insert(Pos::default(), "Cat catalog cat\nthe CAT sat", Fmt::default(), "body");
+        assert_eq!(d.find_all("cat", false, false).len(), 4);
+        assert_eq!(d.find_all("cat", true, false).len(), 2, "cat in catalog and the last cat");
+        let whole = d.find_all("cat", false, true);
+        assert_eq!(whole, vec![
+            (Pos::new(0, 0), Pos::new(0, 3)),
+            (Pos::new(0, 12), Pos::new(0, 15)),
+            (Pos::new(1, 4), Pos::new(1, 7)),
+        ]);
+        assert!(d.find_all("", false, false).is_empty());
+        assert_eq!(d.find_all("aa", false, false).len(), 0);
+        let mut d = Document::default();
+        d.insert(Pos::default(), "aaaa", Fmt::default(), "body");
+        assert_eq!(d.find_all("aa", false, false).len(), 2, "matches don't overlap");
     }
 
     #[test]

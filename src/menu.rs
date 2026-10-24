@@ -82,6 +82,9 @@ impl MenuBar {
                 &sep(),
                 &builtin(&mut item, Builtin::Save),
                 &builtin(&mut item, Builtin::SaveAs),
+                &builtin(&mut item, Builtin::Versions),
+                &sep(),
+                &builtin(&mut item, Builtin::ExportPdf),
             ],
         );
         let edit = Submenu::with_items(
@@ -92,6 +95,11 @@ impl MenuBar {
                 &builtin(&mut item, Builtin::Redo),
                 &sep(),
                 &builtin(&mut item, Builtin::SelectAll),
+                &sep(),
+                &builtin(&mut item, Builtin::Find),
+                &builtin(&mut item, Builtin::FindNext),
+                &builtin(&mut item, Builtin::FindPrevious),
+                &builtin(&mut item, Builtin::Replace),
             ],
         );
         let format = Submenu::with_items(

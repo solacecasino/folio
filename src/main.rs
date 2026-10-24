@@ -5,11 +5,15 @@
 mod components;
 mod doc;
 mod editor;
+mod find;
 mod format;
 mod keys;
 mod menu;
 mod panels;
+mod pdf;
+mod safety;
 mod settings;
+mod spell;
 mod theme;
 
 use std::collections::HashMap;
@@ -57,6 +61,22 @@ struct Folio {
     panel_lines: Vec<Vec<Format>>,
 
     show_help: bool,
+    find: find::FindBar,
+    /// Whether the find bar had the keyboard last frame.
+    find_focused: bool,
+    show_versions: bool,
+    /// The macOS spell checker, when spell checking is on.
+    speller: Option<spell::Speller>,
+    /// This document's saved versions, newest first, and whether to reload them.
+    versions: Vec<safety::Version>,
+    versions_stale: bool,
+    /// Revision last seen, when it changed, and the last revision the
+    /// safety net handled (autosave or recovery).
+    seen_revision: (u64, f64),
+    safety_revision: u64,
+    last_auto_version: f64,
+    /// Export as PDF runs during the next frame, where text layout is available.
+    export_pdf: bool,
     title: String,
     error: Option<String>,
     menu: Option<MenuBar>,
@@ -100,6 +120,16 @@ impl Folio {
             page_formats: Vec::new(),
             panel_lines: Vec::new(),
             show_help: false,
+            find: find::FindBar::default(),
+            find_focused: false,
+            show_versions: false,
+            speller: None,
+            versions: Vec::new(),
+            versions_stale: true,
+            seen_revision: (0, 0.0),
+            safety_revision: 0,
+            last_auto_version: f64::NEG_INFINITY,
+            export_pdf: false,
             title: String::new(),
             error: None,
             menu: None,
@@ -112,6 +142,7 @@ impl Folio {
         if let Some(p) = path {
             app.open_path(p);
         }
+        app.offer_recovery();
         app
     }
 
@@ -160,6 +191,12 @@ impl Folio {
             .map(|p| p.lines.iter().map(|l| Format::parse_or_message(l)).collect())
             .collect();
 
+        let language_changed = settings.spell_language != self.settings.spell_language;
+        if !settings.spellcheck {
+            self.speller = None;
+        } else if self.speller.is_none() || language_changed || first {
+            self.speller = Some(spell::Speller::new(&settings.spell_language));
+        }
         self.settings = settings;
         self.user_keys = user_keys;
         self.config_problems = problems;
@@ -243,6 +280,7 @@ impl Folio {
                 let zoom = self.editor.zoom;
                 self.editor = Editor::new(doc);
                 self.editor.zoom = zoom;
+                self.versions_stale = true;
                 self.components.emit("opened", json!({ "path": path }));
                 self.path = Some(path);
                 self.error = None;
@@ -263,19 +301,121 @@ impl Folio {
                 None => return false,
             },
         };
+        self.write_doc(path, true)
+    }
+
+    /// Writes the document to `path`, with a version snapshot if asked.
+    fn write_doc(&mut self, path: PathBuf, version: bool) -> bool {
         self.editor.doc.theme = Some(self.theme().name.clone());
+        if self.editor.doc.id.is_none() {
+            self.editor.doc.id = Some(safety::new_doc_id());
+        }
         match std::fs::write(&path, self.editor.doc.to_json()) {
             Ok(()) => {
                 self.components.emit("saved", json!({ "path": path }));
                 self.path = Some(path);
                 self.editor.dirty = false;
                 self.error = None;
+                safety::clear_recovery();
+                if version && self.settings.versions > 0 {
+                    if let Err(e) = safety::save_version(&self.editor.doc, self.settings.versions) {
+                        self.error = Some(format!("Couldn't keep a version: {e}"));
+                    }
+                    self.versions_stale = true;
+                }
                 true
             }
             Err(e) => {
                 self.error = Some(format!("Couldn't save: {e}"));
                 false
             }
+        }
+    }
+
+    /// Autosaves named documents, or keeps a recovery copy of unsaved work,
+    /// once typing pauses for two seconds.
+    fn safety_net(&mut self, now: f64) {
+        let rev = self.editor.revision;
+        if rev != self.seen_revision.0 {
+            self.seen_revision = (rev, now);
+        }
+        let quiet = now - self.seen_revision.1 > 2.0;
+        if !self.editor.dirty || !quiet || self.safety_revision == rev {
+            return;
+        }
+        self.safety_revision = rev;
+        match self.path.clone() {
+            Some(path) if self.settings.autosave => {
+                // Autosaves add a version at most every five minutes.
+                let version = now - self.last_auto_version > 300.0;
+                if self.write_doc(path, version) && version {
+                    self.last_auto_version = now;
+                }
+            }
+            path => {
+                if let Err(e) = safety::write_recovery(&self.editor.doc, path.as_deref()) {
+                    self.error = Some(format!("Couldn't keep a recovery copy: {e}"));
+                }
+            }
+        }
+    }
+
+    /// Offers back work left behind when Folio didn't quit cleanly.
+    fn offer_recovery(&mut self) {
+        let Some((file, record)) = safety::orphaned_recoveries().into_iter().next() else { return };
+        let restore = MessageDialog::new()
+            .set_title("Restore unsaved work?")
+            .set_description(record.describe())
+            .set_buttons(MessageButtons::YesNo)
+            .show()
+            == MessageDialogResult::Yes;
+        if restore {
+            match record.document() {
+                Ok(doc) => {
+                    let zoom = self.editor.zoom;
+                    self.editor = Editor::new(doc);
+                    self.editor.zoom = zoom;
+                    self.editor.dirty = true;
+                    self.path = record.path.clone();
+                    // Keep a copy under this window's name until it's saved.
+                    let _ = safety::write_recovery(&self.editor.doc, self.path.as_deref());
+                }
+                Err(e) => {
+                    self.error = Some(format!("Couldn't restore: {e}"));
+                    return;
+                }
+            }
+        }
+        let _ = std::fs::remove_file(file);
+    }
+
+    fn restore_version(&mut self, file: &std::path::Path) {
+        let Ok(mut doc) = std::fs::read_to_string(file).map_err(|e| e.to_string()).and_then(|s| Document::from_json(&s))
+        else {
+            self.error = Some("Couldn't read that version".into());
+            return;
+        };
+        let confirm = MessageDialog::new()
+            .set_title("Restore this version?")
+            .set_description(
+                "The document will be replaced with this version. You can undo it with Cmd+Z, and your current text \
+                 is kept as a version the next time you save.",
+            )
+            .set_buttons(MessageButtons::OkCancel)
+            .show();
+        if confirm == MessageDialogResult::Ok {
+            doc.id = self.editor.doc.id.clone();
+            doc.theme = self.editor.doc.theme.clone();
+            self.editor.replace_document(doc);
+        }
+    }
+
+    fn refresh_versions(&mut self) {
+        let wanted = self.show_versions
+            || (self.settings.show_panels && self.settings.panels.iter().any(|p| p.kind == PanelKind::Versions));
+        if wanted && self.versions_stale {
+            self.versions = self.editor.doc.id.as_deref().map(safety::list_versions).unwrap_or_default();
+            self.versions_stale = false;
         }
     }
 
@@ -324,6 +464,8 @@ impl Folio {
                     self.editor = Editor::new(Document::default());
                     self.editor.zoom = zoom;
                     self.path = None;
+                    self.versions_stale = true;
+                    safety::clear_recovery();
                 }
             }
             Builtin::Open => {
@@ -344,6 +486,15 @@ impl Folio {
             Builtin::Undo => self.editor.undo(),
             Builtin::Redo => self.editor.redo(),
             Builtin::SelectAll => self.editor.select_all(),
+            Builtin::Find | Builtin::Replace => {
+                self.find.open(b == Builtin::Replace, self.editor.selected_text());
+            }
+            Builtin::FindNext | Builtin::FindPrevious => {
+                if !self.find.open || self.find.query.is_empty() {
+                    self.find.open(false, self.editor.selected_text());
+                }
+                self.find_step(b == Builtin::FindNext);
+            }
             Builtin::Bold => self.editor.toggle(|f| f.bold, |f, on| f.bold = on),
             Builtin::Italic => self.editor.toggle(|f| f.italic, |f, on| f.italic = on),
             Builtin::Underline => self.editor.toggle(|f: &Fmt| f.underline, |f, on| f.underline = on),
@@ -377,6 +528,11 @@ impl Folio {
                 self.persist(|| settings::save_value("show_panels", on));
             }
             Builtin::Help => self.show_help = !self.show_help,
+            Builtin::ExportPdf => self.export_pdf = true,
+            Builtin::Versions => {
+                self.show_versions = !self.show_versions;
+                self.versions_stale = true;
+            }
             Builtin::ReloadConfig => {
                 self.load_config(false);
                 self.watch.forget_own_writes();
@@ -391,10 +547,47 @@ impl Folio {
         }
     }
 
+    fn find_step(&mut self, forward: bool) {
+        self.find.refresh(&self.editor.doc, self.editor.revision);
+        if let Some((a, b)) = self.find.step(self.editor.cursor(), forward, self.editor.selection_range()) {
+            self.editor.select(a, b);
+        }
+    }
+
+    fn find_action(&mut self, action: find::Action, now: f64) {
+        use find::Action;
+        match action {
+            Action::Next => self.find_step(true),
+            Action::Previous => self.find_step(false),
+            Action::ReplaceOne => {
+                // Replace the selected match, then move to the next one.
+                let selected = self.editor.selection_range();
+                if let Some(m) = selected.filter(|s| self.find.matches.contains(s)) {
+                    let text = self.find.replacement.clone();
+                    self.editor.replace_ranges(&[m], &text, &self.themes[self.theme]);
+                }
+                self.find_step(true);
+            }
+            Action::ReplaceAll => {
+                self.find.refresh(&self.editor.doc, self.editor.revision);
+                let matches = self.find.matches.clone();
+                let text = self.find.replacement.clone();
+                self.editor.replace_ranges(&matches, &text, &self.themes[self.theme]);
+                let n = matches.len();
+                self.notice = Some((format!("Replaced {n} {}", if n == 1 { "match" } else { "matches" }), now));
+            }
+            Action::Close => {
+                self.find.open = false;
+                self.find_focused = false;
+            }
+        }
+    }
+
     fn panel_action(&mut self, action: panels::Action, now: f64) {
         use panels::Action;
         match action {
             Action::Goto(para) => return self.editor.goto(para),
+            Action::RestoreVersion(file) => return self.restore_version(&file),
             Action::Run(command) => return self.run(command, now),
             Action::Move(i, side) => self.settings.panels[i].side = side,
             Action::Close(i) => {
@@ -594,6 +787,34 @@ impl Folio {
         }
     }
 
+    fn versions_window(&mut self, ctx: &egui::Context) {
+        let mut open = true;
+        let mut restore = None;
+        egui::Window::new("Versions").open(&mut open).default_width(320.0).show(ctx, |ui| {
+            if self.editor.doc.id.is_none() || self.versions.is_empty() {
+                ui.label("Folio keeps a version each time you save this document.");
+                return;
+            }
+            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                for v in &self.versions {
+                    ui.horizontal(|ui| {
+                        ui.strong(&v.when);
+                        ui.label(format!("{} words", v.words));
+                        if ui.button("Restore").clicked() {
+                            restore = Some(v.path.clone());
+                        }
+                    });
+                    ui.weak(&v.preview);
+                    ui.separator();
+                }
+            });
+        });
+        self.show_versions = open;
+        if let Some(file) = restore {
+            self.restore_version(&file);
+        }
+    }
+
     fn overlays(&self, ui: &egui::Ui, fields: &dyn Fn(&str) -> Option<String>) {
         let rect = ui.max_rect();
         let painter = ui.painter();
@@ -650,8 +871,13 @@ impl eframe::App for Folio {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
 
-        if ctx.input(|i| i.viewport().close_requested()) && !self.confirm_discard() {
-            ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.confirm_discard() {
+                // A clean quit: nothing to recover next time.
+                safety::clear_recovery();
+            } else {
+                ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+            }
         }
         if self.watch.changed(now) {
             self.load_config(false);
@@ -660,11 +886,18 @@ impl eframe::App for Folio {
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
 
         let mut commands = self.menu.as_ref().map(MenuBar::poll).unwrap_or_default();
-        commands.extend(self.keymap.take_commands(&ctx));
+        // While typing in the find bar, only find commands use the keyboard.
+        let typing_in_find = self.find_focused;
+        commands.extend(self.keymap.take_commands(&ctx, |c| {
+            !typing_in_find
+                || matches!(c, Command::Builtin(Builtin::Find | Builtin::FindNext | Builtin::FindPrevious | Builtin::Replace))
+        }));
         for command in commands {
             self.run(command, now);
         }
         self.service_components(now);
+        self.safety_net(now);
+        self.refresh_versions();
 
         let full = ui.max_rect();
         let (bar, body) = full.split_top_bottom_at_y(full.top() + TITLEBAR);
@@ -682,12 +915,32 @@ impl eframe::App for Folio {
                 text_lines: &self.panel_lines,
                 fields: &field,
                 host: &self.components,
+                versions: &self.versions,
             };
             let actions = panels::show(&mut body_ui, &self.settings.panels, &cx);
             for action in actions {
                 self.panel_action(action, now);
             }
         }
+
+        if self.find.open {
+            self.find.refresh(&self.editor.doc, self.editor.revision);
+            let selection = self.editor.selection_range();
+            let (actions, focused) = self.find.show(&mut body_ui, &self.themes[self.theme], selection);
+            self.find_focused = focused;
+            for action in actions {
+                self.find_action(action, now);
+            }
+            if !self.find_focused && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.find_action(find::Action::Close, now);
+            }
+        } else {
+            self.find_focused = false;
+        }
+        self.editor.highlights = if self.find.open { self.find.matches.clone() } else { Vec::new() };
+        self.editor.keyboard = !self.find_focused;
+        self.editor.smart_quotes = self.settings.smart_quotes;
+        self.editor.smart_dashes = self.settings.smart_dashes;
 
         let rest = body_ui.available_rect_before_wrap();
         let mut page_ui = body_ui.new_child(egui::UiBuilder::new().max_rect(rest));
@@ -700,7 +953,23 @@ impl eframe::App for Folio {
             };
             (header.eval(&page_field), footer.eval(&page_field))
         };
-        self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text);
+        let exported = std::mem::take(&mut self.export_pdf).then(|| {
+            let model = self.editor.print_model(&page_ui, &self.themes[self.theme], &self.fonts, &page_text);
+            export_pdf(&model, self.path.as_deref())
+        });
+        self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text, self.speller.as_mut());
+        match exported {
+            Some(Ok(Some(path))) => {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                self.notice = Some((format!("Exported {name}"), now));
+            }
+            Some(Err(e)) => self.error = Some(e),
+            _ => {}
+        }
+
+        if self.show_versions {
+            self.versions_window(&ctx);
+        }
 
         let values = self.fields();
         let field = |name: &str| values.get(name).filter(|v| !v.is_empty()).cloned();
@@ -712,6 +981,21 @@ impl eframe::App for Folio {
             self.title = title;
         }
     }
+}
+
+/// Asks where to save, then writes the PDF. Ok(None) means the user cancelled.
+fn export_pdf(model: &pdf::Model, doc_path: Option<&std::path::Path>) -> Result<Option<PathBuf>, String> {
+    let stem = doc_path
+        .and_then(|p| p.file_stem())
+        .map_or("Untitled".to_owned(), |s| s.to_string_lossy().into_owned());
+    let mut dialog = FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{stem}.pdf"));
+    if let Some(dir) = doc_path.and_then(|p| p.parent()) {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(path) = dialog.save_file() else { return Ok(None) };
+    let bytes = pdf::render(model, &stem)?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't save the PDF: {e}"))?;
+    Ok(Some(path))
 }
 
 /// Local date (YYYY-MM-DD) and time (HH:MM).

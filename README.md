@@ -12,7 +12,11 @@ of [foobar2000](https://www.foobar2000.org/).
 
 ## Features
 
-- **Real pages:** page size, margins and pagination, like a word processor
+- **Real pages:** page size, margins and pagination, like a word processor; long paragraphs flow across pages
+- **Print-perfect PDF export:** the PDF matches the screen line for line, with your theme's fonts embedded and text that stays searchable (`Cmd+E`)
+- **A safety net:** autosave, crash recovery, and a version history you can browse and restore
+- **Spell check** with the macOS dictionaries, plus smart quotes, em dashes and ellipses as you type
+- **Find & replace** with match case and whole words
 - **Rich text:** bold, italic, underline and paragraph styles (title, headings, quote, …)
 - **Themes are files:** fonts, colors, page setup, headers and footers, and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
 - **No settings window:** `settings.toml` and `keys.toml` control everything, reload live as you save them, and every shortcut is remappable
@@ -101,6 +105,8 @@ stats. The full protocol is in [docs/components.md](docs/components.md).
 | | |
 |---|---|
 | `Cmd+N` / `Cmd+O` / `Cmd+S` | New, open, save |
+| `Cmd+E` | Export as PDF |
+| `Cmd+F` / `Cmd+G` / `Cmd+Alt+F` | Find, find next, find and replace |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold, italic, underline |
 | `Cmd+0`–`Cmd+9` | Paragraph styles (set by the theme) |
 | `Cmd+T` | Next theme |
@@ -112,9 +118,9 @@ stats. The full protocol is in [docs/components.md](docs/components.md).
 ## Roadmap
 
 - Collaborative editing over encrypted peer-to-peer tunnels, as a component (Folio Link)
-- PDF export
+- Lists, links and images
 - Lua scripting for small tweaks
-- Movable panels
+- Shareable setups and a theme gallery
 
 ## License
 

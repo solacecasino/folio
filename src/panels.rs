@@ -14,6 +14,7 @@ use crate::theme::{Theme, color};
 
 pub enum Action {
     Goto(usize),
+    RestoreVersion(std::path::PathBuf),
     Run(Command),
     Move(usize, Side),
     Close(usize),
@@ -28,6 +29,8 @@ pub struct Context<'a> {
     pub text_lines: &'a [Vec<Format>],
     pub fields: &'a dyn Fn(&str) -> Option<String>,
     pub host: &'a Host,
+    /// This document's saved versions, newest first.
+    pub versions: &'a [crate::safety::Version],
 }
 
 pub fn show(ui: &mut Ui, specs: &[PanelSpec], cx: &Context<'_>) -> Vec<Action> {
@@ -64,6 +67,7 @@ pub fn show(ui: &mut Ui, specs: &[PanelSpec], cx: &Context<'_>) -> Vec<Action> {
                             }
                         }
                         PanelKind::Component => component(ui, spec, cx, &mut actions),
+                        PanelKind::Versions => versions(ui, cx, &mut actions),
                     });
             });
 
@@ -82,6 +86,7 @@ fn header(ui: &mut Ui, i: usize, spec: &PanelSpec, cx: &Context<'_>, actions: &m
         PanelKind::Outline => "Outline".into(),
         PanelKind::Text => String::new(),
         PanelKind::Component => component_panel_title(spec, cx).unwrap_or_else(|| "Component".into()),
+        PanelKind::Versions => "Versions".into(),
     });
     let label = ui.add(
         egui::Label::new(RichText::new(if title.is_empty() { "···".into() } else { title.to_uppercase() }).small().strong())
@@ -156,6 +161,23 @@ fn component(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<
                 ui.label(&line.text);
             }
         }
+    }
+}
+
+fn versions(ui: &mut Ui, cx: &Context<'_>, actions: &mut Vec<Action>) {
+    if cx.versions.is_empty() {
+        ui.label(RichText::new("Versions appear here each time you save.").weak());
+        return;
+    }
+    for v in cx.versions {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(&v.when).small());
+            if ui.small_button("Restore").clicked() {
+                actions.push(Action::RestoreVersion(v.path.clone()));
+            }
+        });
+        ui.label(RichText::new(format!("{} words · {}", v.words, v.preview)).weak().small());
+        ui.add_space(4.0);
     }
 }
 
