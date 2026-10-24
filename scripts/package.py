@@ -65,7 +65,7 @@ def main():
         shutil.copytree(ROOT / "themes", stage / "themes")
         shutil.copy2(ROOT / "packaging/windows/README.txt", stage)
         shutil.copy2(ROOT / "LICENSE", stage / "LICENSE.txt")
-        out = stage.with_suffix(".zip")
+        out = DIST / f"{stage.name}.zip"
         zip_dir(stage, out)
         shutil.rmtree(stage)
 
