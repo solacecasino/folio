@@ -43,6 +43,11 @@ trash = "5.2.9"
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 spellbook = "0.4.2"
 
+[workspace]
+members = ["crates/folio_plugin"]
+# Test guests are WebAssembly crates built separately.
+exclude = ["crates/folio_plugin/tests/guest"]
+
 [build-dependencies]
 winresource = "0.1.34"
 

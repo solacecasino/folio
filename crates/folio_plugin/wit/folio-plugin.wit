@@ -1,0 +1,101 @@
+/// The contract between Folio and a WebAssembly plugin.
+///
+/// A plugin is a WebAssembly component (built for `wasm32-wasip2`) that
+/// exports `guest` and may import `document` and `host`. It also sees WASI
+/// Preview 2, but with nothing granted unless its manifest asks: no
+/// files, no network, no environment.
+package folio:plugin@0.1.0;
+
+/// Reading and changing the open document.
+///
+/// Reads return a snapshot taken when the current event was sent, so a
+/// plugin always sees one consistent document. Edits are queued and applied
+/// by the editor after the event returns; they never block typing.
+interface document {
+    /// A place in the document: a paragraph and a character within it.
+    record position {
+        paragraph: u32,
+        character: u32,
+    }
+
+    record selection {
+        /// Where the selection starts and ends, in document order.
+        start: position,
+        end: position,
+        /// The selected text; paragraphs are separated by "\n".
+        text: string,
+    }
+
+    record metadata {
+        /// The document's title (its file name without extension, or "Untitled").
+        title: string,
+        /// Its file, if it has been saved.
+        path: option<string>,
+        /// The active theme's name.
+        theme: string,
+        paragraphs: u32,
+        words: u32,
+        characters: u32,
+        /// Increases with every change; edits carry it to detect stale ones.
+        revision: u64,
+    }
+
+    /// Why a call was refused.
+    enum denied {
+        /// The manifest doesn't ask for the capability this needs.
+        missing-capability,
+        /// This event has no document (for example, `startup`).
+        no-document,
+        /// The plugin already sent as much as it may for this event.
+        limit-reached,
+    }
+
+    /// The current selection, or none if there's only a caret.
+    /// Needs `document.read`.
+    get-selection: func() -> result<option<selection>, denied>;
+
+    /// Facts about the document. Needs `document.read`.
+    get-metadata: func() -> result<metadata, denied>;
+
+    /// Inserts text at the caret, replacing any selection. "\n" starts a
+    /// new paragraph. Applied as one undo step. Needs `document.edit`.
+    insert-text: func(text: string) -> result<_, denied>;
+}
+
+/// Talking to the person using Folio.
+interface host {
+    enum level { debug, info, warn, error }
+
+    /// Writes to Folio's log.
+    log: func(level: level, message: string);
+
+    /// Shows a short message in the editor for a few seconds.
+    notify: func(message: string);
+}
+
+/// What a plugin implements.
+interface guest {
+    /// Something happened in the editor.
+    variant event {
+        /// The plugin was loaded.
+        startup,
+        /// One of the plugin's commands was chosen (its `id` from the manifest).
+        command(string),
+        /// The document changed.
+        changed,
+        /// The document was saved to this path.
+        saved(string),
+        /// The selection or caret moved.
+        selection-changed,
+    }
+
+    /// Handles one event. An error is shown to the person, and the plugin
+    /// keeps running.
+    on-event: func(event: event) -> result<_, string>;
+}
+
+world plugin {
+    import document;
+    import host;
+    export guest;
+}

@@ -1,0 +1,19 @@
+# A test plugin: each command probes one part of the sandbox and reports
+# what happened with `notify`. Built for wasm32-wasip2 by tests/runtime.rs.
+[package]
+name = "probe_plugin"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.63.0"
+
+[profile.release]
+opt-level = "s"
+
+# Not part of Folio's workspace: it builds for WebAssembly.
+[workspace]

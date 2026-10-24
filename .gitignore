@@ -4,3 +4,4 @@
 /adapters/pdf-export/pdf-export
 /adapters/folio-link/folio-link
 /dist
+/crates/folio_plugin/tests/guest/target

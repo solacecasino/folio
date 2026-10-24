@@ -40,6 +40,12 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Test the plugin runtime
+        shell: bash
+        run: |
+          rustup target add wasm32-wasip2
+          cargo test -p folio_plugin
+
       - name: Package
         run: python scripts/package.py
         shell: bash
