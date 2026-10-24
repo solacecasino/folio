@@ -35,6 +35,9 @@ Download yours from [Releases](../../releases):
 | **Windows** (64-bit) | `Folio-<version>-windows-x64.zip` | Unzip anywhere and run **folio.exe** (keep the `themes` folder next to it). If Windows says it protected your PC, click **More info → Run anyway**. |
 | **Linux** (x86-64) | `folio-<version>-linux-x64.tar.gz` | Unpack it and run `./install.sh` to add Folio to your app menu, or just run `./folio`. |
 
+Each also comes as **Folio Lite** (`Folio-Lite-…`, `folio-lite-…`): the same
+app without WebAssembly plugins, about 40% smaller. Adapters work in both.
+
 On Windows and Linux the menus are in the window, and every `Cmd` shortcut
 below is `Ctrl`.
 
