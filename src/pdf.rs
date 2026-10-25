@@ -191,7 +191,9 @@ mod tests {
         let Some(serif) = serif else { return }; // no system serif on this machine
         assert_eq!(font_for(Some(&serif), 'a').as_deref(), Some(serif.as_path()), "letters stay in the theme font");
         let arrow = font_for(Some(&serif), '→').unwrap();
-        if !crate::theme::symbol_fonts().is_empty() {
+        if covers(&serif, '→') {
+            assert_eq!(arrow, serif, "a font that has the character keeps it (DejaVu Serif does)");
+        } else if !crate::theme::symbol_fonts().is_empty() {
             assert_ne!(arrow, serif, "Georgia has no arrows");
             assert!(covers(&arrow, '→'), "the fallback really has the arrow");
         }
