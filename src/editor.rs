@@ -400,6 +400,25 @@ impl Editor {
         }
     }
 
+    /// Copies the selection: plain text for other apps, and the formatted
+    /// copy for pasting back into Folio. False when nothing was selected.
+    fn copy(&self, ui: &Ui) -> bool {
+        let Some((a, b)) = self.selection() else { return false };
+        let text = self.doc.text(a, b);
+        crate::clipboard::remember(&text, &self.doc.fragment(a, b));
+        ui.ctx().copy_text(text);
+        true
+    }
+
+    /// Pastes text copied in Folio with its formatting, as one undo step.
+    fn paste_fragment(&mut self, fragment: &Document) {
+        self.checkpoint(EditKind::Other);
+        self.delete_selection();
+        self.cursor = self.doc.insert_fragment(self.cursor, fragment);
+        self.anchor = self.cursor;
+        self.scroll_to_cursor = true;
+    }
+
     /// Inserts text at the caret (replacing any selection), as one undo step.
     pub fn insert_at_cursor(&mut self, text: &str, theme: &Theme) {
         self.insert_text(text, theme, EditKind::Other);
@@ -783,6 +802,7 @@ impl Editor {
                 let page_i = page_of(base.y);
                 let page_min = layout.pages[page_i].min.to_vec2();
                 let page = &mut pages[page_i];
+                // A word is cut where the formatting or the font changes.
                 let mut word: Option<(pdf::Text, Fmt)> = None;
                 let mut link: Option<(crate::doc::Link, pdf::LinkArea)> = None;
                 let row_h = (row.max_y() - row.min_y()) * k;
@@ -819,11 +839,13 @@ impl Editor {
                         page.texts.extend(word.take().map(|w| w.0));
                         continue;
                     }
+                    let (theme_font, slant) = fonts.file(&family, style.bold || fmt.bold, style.italic || fmt.italic);
+                    // Characters the theme's font lacks use a fallback font, as on screen.
+                    let font = pdf::font_for(theme_font.as_deref(), glyph.chr);
                     match &mut word {
-                        Some((w, f)) if *f == fmt => w.text.push(glyph.chr),
+                        Some((w, f)) if *f == fmt && w.font == font => w.text.push(glyph.chr),
                         _ => {
                             page.texts.extend(word.take().map(|w| w.0));
-                            let (font, slant) = fonts.file(&family, style.bold || fmt.bold, style.italic || fmt.italic);
                             word = Some((
                                 pdf::Text {
                                     x: at.x,
@@ -969,15 +991,15 @@ impl Editor {
                         self.smarten(c);
                     }
                 }
-                egui::Event::Paste(t) => self.insert_text(&t, theme, EditKind::Other),
+                egui::Event::Paste(t) => match crate::clipboard::formatted(&t) {
+                    Some(fragment) => self.paste_fragment(&fragment),
+                    None => self.insert_text(&t, theme, EditKind::Other),
+                },
                 egui::Event::Copy => {
-                    if let Some((a, b)) = self.selection() {
-                        ui.ctx().copy_text(self.doc.text(a, b));
-                    }
+                    self.copy(ui);
                 }
                 egui::Event::Cut => {
-                    if let Some((a, b)) = self.selection() {
-                        ui.ctx().copy_text(self.doc.text(a, b));
+                    if self.copy(ui) {
                         self.delete_back(self.cursor);
                     }
                 }
@@ -1551,14 +1573,17 @@ mod tests {
     }
 
     /// `FOLIO_MODEL_OUT=/path/model.json cargo test export_sample -- --ignored`
-    /// writes examples/welcome.folio's print model, for testing the PDF adapter.
+    /// writes examples/welcome.folio's (or FOLIO_SAMPLE's) print model, for
+    /// testing the PDF adapter.
     #[test]
     #[ignore]
     fn export_sample() {
         let ctx = egui::Context::default();
         let theme: Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
         let fonts = crate::theme::install_fonts(&ctx, std::slice::from_ref(&theme));
-        let doc = Document::from_json(&std::fs::read_to_string("examples/welcome.folio").unwrap()).unwrap();
+        // FOLIO_SAMPLE picks another document.
+        let sample = std::env::var("FOLIO_SAMPLE").unwrap_or_else(|_| "examples/welcome.folio".into());
+        let doc = Document::from_json(&std::fs::read_to_string(sample).unwrap()).unwrap();
         let editor = Editor::new(doc);
         let mut model = None;
         for _ in 0..2 {

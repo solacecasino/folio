@@ -163,6 +163,23 @@ pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Why Folio's questions (save before closing, allow this adapter, ...)
+/// can't be shown, if they can't. On Linux they're shown by `zenity`; with
+/// it missing, every question would quietly come back as "Cancel".
+pub fn dialog_problem() -> Option<String> {
+    if cfg!(any(target_os = "macos", windows)) {
+        return None;
+    }
+    let found = std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("zenity").is_file()));
+    (!found).then(|| {
+        "Folio can't show its questions (like saving before closing) because zenity isn't installed. \
+         Install it: sudo apt install zenity (Debian, Ubuntu), sudo dnf install zenity (Fedora), \
+         sudo pacman -S zenity (Arch)."
+            .to_owned()
+    })
+}
+
 /// Where the system keeps fonts, for themes that name a font file without a
 /// folder (`"Georgia.ttf"`), so one theme works on every platform.
 pub fn font_dirs() -> Vec<PathBuf> {

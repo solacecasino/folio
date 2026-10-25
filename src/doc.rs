@@ -210,6 +210,58 @@ impl Document {
         a
     }
 
+    /// The range `a..b` as its own document, keeping formatting, styles,
+    /// list items and links.
+    pub fn fragment(&self, a: Pos, b: Pos) -> Document {
+        let (a, b) = (a.min(b), a.max(b));
+        let paragraphs = (a.para..=b.para)
+            .map(|i| {
+                let para = &self.paragraphs[i];
+                let start = if i == a.para { a.ch } else { 0 };
+                let end = if i == b.para { b.ch } else { para.len() };
+                Paragraph {
+                    style: para.style.clone(),
+                    chars: para.chars[start..end].to_vec(),
+                    fmts: para.fmts[start..end].to_vec(),
+                    list: para.list,
+                }
+            })
+            .collect();
+        Document {
+            paragraphs,
+            theme: None,
+            id: None,
+        }
+    }
+
+    /// Inserts a fragment at `p` and returns the position after it. Its
+    /// first and last paragraphs join the text around `p`; the ones between
+    /// come in whole, with their styles and list items. Pasted at the start
+    /// of an empty paragraph, the first one brings its style too.
+    pub fn insert_fragment(&mut self, p: Pos, fragment: &Document) -> Pos {
+        let Some((first, rest)) = fragment.paragraphs.split_first() else {
+            return p;
+        };
+        let here = &mut self.paragraphs[p.para];
+        if here.chars.is_empty() {
+            here.style = first.style.clone();
+            here.list = first.list;
+        }
+        let tail_chars = here.chars.split_off(p.ch);
+        let tail_fmts = here.fmts.split_off(p.ch);
+        here.chars.extend(&first.chars);
+        here.fmts.extend(&first.fmts);
+        let mut at = Pos::new(p.para, here.chars.len());
+        for (k, para) in rest.iter().enumerate() {
+            self.paragraphs.insert(p.para + 1 + k, para.clone());
+            at = Pos::new(p.para + 1 + k, para.chars.len());
+        }
+        let last = &mut self.paragraphs[at.para];
+        last.chars.extend(tail_chars);
+        last.fmts.extend(tail_fmts);
+        at
+    }
+
     pub fn text(&self, a: Pos, b: Pos) -> String {
         let (a, b) = (a.min(b), a.max(b));
         let mut out = String::new();
@@ -480,6 +532,40 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fragments_keep_formatting_lists_and_links() {
+        let mut doc = Document::default();
+        doc.insert(Pos::default(), "Title\nFirst item\nSecond item\nPlain", Fmt::default(), "body");
+        doc.paragraphs[0].style = "h1".into();
+        doc.set_list(1, 2, Some(List { kind: ListKind::Bullet, level: 0 }));
+        doc.for_each_fmt(Pos::new(1, 0), Pos::new(1, 5), |f| f.bold = true);
+        doc.set_link(Pos::new(2, 0), Pos::new(2, 6), Some("https://x.y"));
+
+        // From the middle of the title to the middle of the second item.
+        let frag = doc.fragment(Pos::new(0, 2), Pos::new(2, 6));
+        assert_eq!(frag.paragraphs.len(), 3);
+        let back = Document::from_json(&frag.to_json()).unwrap();
+        assert_eq!(back.paragraphs[1].list.map(|l| l.kind), Some(ListKind::Bullet));
+        assert!(back.paragraphs[1].fmts[0].bold);
+        assert_eq!(back.paragraphs[2].fmts[0].link.map(Link::url).as_deref(), Some("https://x.y"));
+
+        // Into the middle of "Plain": its first and last parts join the text there.
+        let mut target = Document::default();
+        target.insert(Pos::default(), "Plain", Fmt::default(), "body");
+        let end = target.insert_fragment(Pos::new(0, 2), &back);
+        let text = target.text(Pos::default(), target.end());
+        assert_eq!(text, "Pltle\nFirst item\nSecondain");
+        assert_eq!(end, Pos::new(2, 6));
+        assert!(target.paragraphs[1].list.is_some() && target.paragraphs[1].fmts[0].bold);
+        assert!(target.paragraphs[0].list.is_none(), "the paragraph pasted into keeps its own kind");
+
+        // At the start of an empty paragraph, the first paragraph's style comes along.
+        let mut empty = Document::default();
+        empty.insert_fragment(Pos::default(), &doc.fragment(Pos::new(0, 0), Pos::new(1, 3)));
+        assert_eq!(empty.paragraphs[0].style, "h1");
+        assert_eq!(empty.paragraphs[1].list.map(|l| l.kind), Some(ListKind::Bullet));
+    }
 
     #[test]
     fn lists_and_links_round_trip_and_number_themselves() {

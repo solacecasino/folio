@@ -93,14 +93,59 @@ pub fn to_json(model: &Model, title: &str) -> Result<Value, String> {
 }
 
 fn builtin_font_path() -> Result<PathBuf, String> {
-    let path = crate::settings::config_dir().join("cache/Ubuntu-Light.ttf");
+    builtin_font("Ubuntu-Light")
+}
+
+/// One of egui's built-in fonts as a file, written to the cache once.
+fn builtin_font(name: &str) -> Result<PathBuf, String> {
+    let path = crate::settings::config_dir().join(format!("cache/{name}.ttf"));
     if !path.exists() {
         let defs = FontDefinitions::default();
-        let font = defs.font_data.get("Ubuntu-Light").ok_or("built-in font missing")?;
+        let font = defs.font_data.get(name).ok_or("built-in font missing")?;
         std::fs::create_dir_all(path.parent().expect("has parent")).map_err(|e| e.to_string())?;
         std::fs::write(&path, (*font.font).as_ref()).map_err(|e| e.to_string())?;
     }
     Ok(path)
+}
+
+/// Whether a font file has a glyph for `c`. Results are cached; a file that
+/// can't be read or parsed has none.
+fn covers(path: &std::path::Path, c: char) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static FILES: Mutex<Option<HashMap<PathBuf, Option<Vec<u8>>>>> = Mutex::new(None);
+    let mut files = FILES.lock().unwrap_or_else(|e| e.into_inner());
+    let data = files
+        .get_or_insert_with(HashMap::new)
+        .entry(path.to_path_buf())
+        .or_insert_with(|| std::fs::read(path).ok());
+    data.as_deref()
+        .and_then(|d| ttf_parser::Face::parse(d, 0).ok())
+        .is_some_and(|face| face.glyph_index(c).is_some())
+}
+
+/// The font to print `c` with: the theme's (`None` is the built-in font)
+/// if it has the character, otherwise the first fallback font that does,
+/// the same ones used on screen.
+pub fn font_for(preferred: Option<&std::path::Path>, c: char) -> Option<PathBuf> {
+    let has = match preferred {
+        Some(p) => covers(p, c),
+        None => builtin_font_path().is_ok_and(|p| covers(&p, c)),
+    };
+    if has {
+        return preferred.map(PathBuf::from);
+    }
+    // The same order as on screen: egui's built-in fonts, then the system's
+    // symbol font.
+    static CHAIN: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    let chain = CHAIN.get_or_init(|| {
+        let defs = FontDefinitions::default();
+        let names = defs.families.get(&eframe::egui::FontFamily::Proportional).cloned().unwrap_or_default();
+        let mut chain: Vec<PathBuf> = names.iter().filter_map(|name| builtin_font(name).ok()).collect();
+        chain.extend(crate::theme::symbol_fonts());
+        chain
+    });
+    chain.iter().find(|p| covers(p, c)).cloned().or_else(|| preferred.map(PathBuf::from))
 }
 
 #[cfg(test)]
@@ -134,5 +179,21 @@ mod tests {
         let font = v["pages"][0]["texts"][0]["font"].as_str().unwrap();
         assert!(std::path::Path::new(font).exists(), "the built-in font is on disk for adapters");
         assert_eq!(v["pages"][0]["rects"][0]["w"], 3.0);
+    }
+
+    #[test]
+    fn missing_characters_fall_back_to_a_font_that_has_them() {
+        // Georgia, or whatever serif the system has, has letters but no arrows.
+        let theme: crate::theme::Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
+        let ctx = eframe::egui::Context::default();
+        let fonts = crate::theme::install_fonts(&ctx, std::slice::from_ref(&theme));
+        let (serif, _) = fonts.file(&format!("{}:serif", theme.name), false, false);
+        let Some(serif) = serif else { return }; // no system serif on this machine
+        assert_eq!(font_for(Some(&serif), 'a').as_deref(), Some(serif.as_path()), "letters stay in the theme font");
+        let arrow = font_for(Some(&serif), '→').unwrap();
+        if !crate::theme::symbol_fonts().is_empty() {
+            assert_ne!(arrow, serif, "Georgia has no arrows");
+            assert!(covers(&arrow, '→'), "the fallback really has the arrow");
+        }
     }
 }

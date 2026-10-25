@@ -1,0 +1,88 @@
+# Runs Folio on Windows and Linux, types a little, and takes screenshots,
+# so drawn menus, lists, links, spell check and Tab can be checked by eye
+# without those machines. Run by hand: Actions → Screenshots → Run workflow.
+name: Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev xvfb xdotool imagemagick hunspell-en-us fonts-dejavu-core zenity
+      - name: Build
+        run: cargo build --no-default-features
+      - name: Run and take screenshots
+        run: |
+          mkdir -p shots cfg
+          export FOLIO_CONFIG_DIR=$PWD/cfg DISPLAY=:99
+          Xvfb :99 -screen 0 1280x1000x24 &
+          sleep 2
+          ./target/debug/folio examples/welcome.folio &
+          sleep 10
+          shot() { import -window root "shots/$1.png"; }
+          shot 1-start
+          # No window manager: the window sits at the top left, menus in its top strip.
+          xdotool mousemove 50 14 click 1; sleep 1; shot 2-menu
+          xdotool key Escape; sleep 0.5
+          xdotool mousemove 500 600 click 1; sleep 0.5
+          xdotool key ctrl+End Return
+          xdotool type --delay 30 "Typed on Linnux"
+          xdotool key Return Tab
+          xdotool type --delay 30 "after a tab"
+          sleep 1; shot 3-typing
+          xdotool key ctrl+alt+l; sleep 1; shot 4-log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-linux
+          path: shots/
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The runner has no real OpenGL; Mesa's software renderer stands in.
+      - uses: ssciwr/setup-mesa-dist-win@v2
+      - name: Build
+        run: cargo build --no-default-features
+      - name: Run and take screenshots
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force shots, cfg | Out-Null
+          $env:FOLIO_CONFIG_DIR = "$PWD\cfg"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) {
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $img = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($img)
+            $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $img.Save("shots\$name.png")
+          }
+          $p = Start-Process -FilePath target\debug\folio.exe -ArgumentList "examples\welcome.folio" -PassThru
+          Start-Sleep 12
+          Shot "1-start"
+          $wshell = New-Object -ComObject wscript.shell
+          $null = $wshell.AppActivate($p.Id)
+          Start-Sleep 1
+          [System.Windows.Forms.SendKeys]::SendWait("^{END}{ENTER}Typed on Windowss{ENTER}{TAB}after a tab")
+          Start-Sleep 1
+          Shot "2-typing"
+          [System.Windows.Forms.SendKeys]::SendWait("^%l")
+          Start-Sleep 1
+          Shot "3-log"
+          Stop-Process -Id $p.Id
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-windows
+          path: shots/

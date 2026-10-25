@@ -7,6 +7,7 @@
 
 mod adapter_window;
 mod adapters;
+mod clipboard;
 mod doc;
 mod editor;
 mod find;
@@ -181,6 +182,9 @@ impl Folio {
         app.load_config(true);
         if let Some(p) = path {
             app.open_path(p);
+        }
+        if let Some(problem) = platform::dialog_problem() {
+            app.error = Some(problem);
         }
         app.offer_recovery();
         app
@@ -1101,6 +1105,31 @@ impl Folio {
         }
     }
 
+    /// What a bug report needs to know about this Folio, for Copy Debug
+    /// Info. Never any document text.
+    fn debug_info(&self) -> String {
+        let mut out = vec![
+            format!("{} {}", plugins::EDITION, plugins::version()),
+            format!("System: {} {}", std::env::consts::OS, std::env::consts::ARCH),
+            format!("Config folder: {}", settings::config_dir().display()),
+            format!("Theme: {}", self.theme().name),
+        ];
+        let adapters: Vec<String> = self
+            .adapters
+            .installed()
+            .map(|(_, a)| format!("{} {}", a.manifest.name, a.manifest.version))
+            .collect();
+        out.push(format!("Adapters: {}", if adapters.is_empty() { "none".into() } else { adapters.join(", ") }));
+        let plugins = self.plugins.loaded();
+        out.push(format!("Plugins: {}", if plugins.is_empty() { "none".into() } else { plugins.join(", ") }));
+        if let Some(e) = &self.error {
+            out.push(format!("Showing error: {e}"));
+        }
+        let problems = log::recent_problems(20);
+        out.push(if problems.is_empty() { "Recent problems: none".into() } else { format!("Recent problems:\n{}", problems.join("\n")) });
+        out.join("\n")
+    }
+
     /// Opens a link from the document. Only web and mail links: a shared
     /// document shouldn't be able to start programs or open local files.
     fn open_link(&mut self, url: &str, now: f64) {
@@ -1523,10 +1552,13 @@ impl eframe::App for Folio {
         }
         self.prompt_window(&ctx);
 
-        if let Some(w) = &mut self.log_window
-            && !w.show(&ctx)
-        {
-            self.log_window = None;
+        if self.log_window.is_some() {
+            let info = self.debug_info();
+            if let Some(w) = &mut self.log_window
+                && !w.show(&ctx, &|| info.clone())
+            {
+                self.log_window = None;
+            }
         }
         if self.error.is_some() && self.error != self.logged_error {
             log::push("Folio", log::Level::Error, self.error.clone().unwrap_or_default());
@@ -1577,6 +1609,13 @@ fn local_date_time() -> (String, String) {
 
 fn main() -> eframe::Result {
     if std::env::args().nth(1).as_deref() == Some("--version") {
+        // Release builds on Windows have no console of their own; print to
+        // the terminal Folio was started from. (Redirected output already works.)
+        #[cfg(windows)]
+        // SAFETY: attaching to the parent's console has no preconditions.
+        unsafe {
+            let _ = windows::Win32::System::Console::AttachConsole(windows::Win32::System::Console::ATTACH_PARENT_PROCESS);
+        }
         // Also how CI checks that each download starts.
         println!("{} {}", plugins::EDITION, plugins::version());
         return Ok(());

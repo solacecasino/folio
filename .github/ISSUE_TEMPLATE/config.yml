@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A problem with an adapter or plugin
+    url: https://github.com/solacecasino/folio-adapters/issues
+    about: Folio's own adapters (PDF Export, Folio Link, Rich Content, Writing Tools) live there. For others, use their homepage.

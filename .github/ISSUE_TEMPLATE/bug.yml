@@ -1,0 +1,38 @@
+name: Report a problem
+description: Something in Folio doesn't work, looks wrong, or crashed.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The quickest way to fill in the details: in Folio, open
+        **View → Log** (Cmd+Alt+L, or Ctrl+Alt+L) and click **Copy Debug Info**, then paste it below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Opened a document with a numbered list
+        2. Pressed Tab on the second item
+        3. Expected it to indent; instead ...
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug info
+      description: From View → Log → Copy Debug Info. It has Folio's version, your system, and recent errors; no document contents.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: often
+    attributes:
+      label: How often?
+      options: [Every time, Sometimes, Once]
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots help a lot, especially for anything that looks wrong. If it's about a specific document, attaching it (or a small one that shows the problem) helps too.

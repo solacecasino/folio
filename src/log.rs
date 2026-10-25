@@ -58,6 +58,17 @@ pub fn lines() -> Vec<Line> {
     LINES.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
 }
 
+/// Recent warnings and errors, newest last, for bug reports.
+pub fn recent_problems(n: usize) -> Vec<String> {
+    let lines = lines();
+    let problems: Vec<String> = lines
+        .iter()
+        .filter(|l| l.level != Level::Info)
+        .map(|l| format!("{} {}: {}", l.time, l.source, l.text))
+        .collect();
+    problems[problems.len().saturating_sub(n)..].to_vec()
+}
+
 pub fn clear() {
     LINES.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
@@ -69,8 +80,9 @@ pub struct Window {
 }
 
 impl Window {
-    /// Draws the window; returns false when it was closed.
-    pub fn show(&mut self, ctx: &eframe::egui::Context) -> bool {
+    /// Draws the window; returns false when it was closed. `debug_info`
+    /// describes this Folio for bug reports (Copy Debug Info).
+    pub fn show(&mut self, ctx: &eframe::egui::Context, debug_info: &dyn Fn() -> String) -> bool {
         use eframe::egui::{self, Color32, RichText};
         let mut open = true;
         let lines = lines();
@@ -97,6 +109,13 @@ impl Window {
                 }
                 if ui.button("Clear").clicked() {
                     clear();
+                }
+                if ui
+                    .button("Copy Debug Info")
+                    .on_hover_text("Version, system, add-ons and recent errors, for a bug report. No document text.")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(debug_info());
                 }
             });
             ui.separator();

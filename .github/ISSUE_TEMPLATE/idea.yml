@@ -1,0 +1,11 @@
+name: Suggest something
+description: An idea for Folio, or something that annoyed you.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: What were you trying to do, and what got in the way?
+    validations:
+      required: true

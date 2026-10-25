@@ -205,6 +205,18 @@ impl FontFile {
     }
 }
 
+/// Small system fonts of symbols (arrows, check marks, math), used after
+/// the theme's and the built-in fonts, on screen and in PDFs. At most two,
+/// since every font is held in memory. Color emoji aren't covered.
+pub fn symbol_fonts() -> Vec<PathBuf> {
+    // macOS (two, since neither has everything), Windows, Linux.
+    ["Apple Symbols.ttf", "ZapfDingbats.ttf", "seguisym.ttf", "DejaVuSans.ttf", "NotoSansSymbols2-Regular.ttf"]
+        .iter()
+        .filter_map(|name| system_fonts().get(&name.to_lowercase()).cloned())
+        .take(2)
+        .collect()
+}
+
 /// Every font file in the system's font folders, by lowercase file name.
 fn system_fonts() -> &'static HashMap<String, PathBuf> {
     static FONTS: std::sync::OnceLock<HashMap<String, PathBuf>> = std::sync::OnceLock::new();
@@ -471,6 +483,15 @@ impl FontMap {
 /// themes never references a font that isn't loaded yet.
 pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
     let mut defs = FontDefinitions::default();
+    // The system's symbol font goes last in every chain, so arrows and the
+    // like show instead of boxes.
+    for (i, bytes) in symbol_fonts().into_iter().filter_map(|p| std::fs::read(p).ok()).enumerate() {
+        let name = format!("symbols-{i}");
+        defs.font_data.insert(name.clone(), FontData::from_owned(bytes).into());
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            defs.families.entry(family).or_default().push(name.clone());
+        }
+    }
     let builtin = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     let mut map = FontMap::default();
     let mut loaded: HashMap<PathBuf, String> = HashMap::new();

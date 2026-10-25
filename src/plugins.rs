@@ -212,6 +212,14 @@ mod enabled {
             self.runtime.as_ref().is_some_and(|r| r.plugins().iter().any(|p| p.name == plugin))
         }
 
+        /// Loaded plugins as "Name version".
+        pub fn loaded(&self) -> Vec<String> {
+            self.runtime
+                .as_ref()
+                .map(|r| r.plugins().iter().map(|p| format!("{} {}", p.name, p.version)).collect())
+                .unwrap_or_default()
+        }
+
         /// Publishes the document if it or the selection changed, sends the
         /// matching events, and collects what plugins sent back. Cheap when
         /// nothing changed; never waits.
@@ -388,6 +396,10 @@ mod disabled {
 
         pub fn is_loaded(&self, _plugin: &str) -> bool {
             false
+        }
+
+        pub fn loaded(&self) -> Vec<String> {
+            Vec::new()
         }
 
         pub fn update(&mut self, _editor: &Editor, _path: Option<&Path>, _theme: &str) -> Vec<Effect> {
