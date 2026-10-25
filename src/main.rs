@@ -44,7 +44,9 @@ use menu::{MenuBar, MenuContent};
 use settings::{PanelKind, Settings};
 use theme::{FontMap, Theme, color};
 
-pub const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+// 256px: the window icon, dock icon and About box never show it larger, and
+// the 1024px original cost over 30 MB once macOS scaled it for the dock.
+pub const ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
 
 /// Height of the strip drawn where the macOS titlebar would be (the menus
 /// on Windows and Linux).
@@ -58,6 +60,9 @@ struct Folio {
     themes: Vec<Theme>,
     theme: usize,
     fonts: FontMap,
+    /// Fonts for a theme just switched to: egui loads them for the next
+    /// pass, so they replace `fonts` there (see `load_fonts`).
+    next_fonts: Option<FontMap>,
 
     settings: Settings,
     user_keys: std::collections::BTreeMap<String, String>,
@@ -145,6 +150,7 @@ impl Folio {
             themes: Vec::new(),
             theme: 0,
             fonts: FontMap::default(),
+            next_fonts: None,
             settings: Settings::default(),
             user_keys: Default::default(),
             keymap: Keymap::default(),
@@ -209,7 +215,6 @@ impl Folio {
     fn load_config(&mut self, first: bool) {
         let current = self.themes.get(self.theme).map(|t| t.name.clone());
         self.themes = theme::load_themes();
-        self.fonts = theme::install_fonts(&self.ctx, &self.themes);
 
         let (settings, mut problems) = settings::load();
         let (user_keys, key_problems) = settings::load_keys();
@@ -225,6 +230,7 @@ impl Folio {
         self.theme = wanted
             .and_then(|name| self.themes.iter().position(|t| t.name == name))
             .unwrap_or(0);
+        self.load_fonts(first);
         self.editor.zoom = settings.zoom.clamp(0.3, 4.0);
 
         self.status_format = Format::parse_or_message(&settings.status);
@@ -253,6 +259,21 @@ impl Folio {
         self.user_keys = user_keys;
         self.config_problems = problems;
         self.rebuild_keys();
+    }
+
+    /// Loads only the current theme's fonts: each theme's fonts take a few
+    /// MB, and only one theme shows at a time. Outside the first frame, egui
+    /// only has them from the next pass, so until then the old map stays
+    /// (unknown faces fall back to the built-in font rather than panic) and
+    /// the pass is redone at once, so the switch never shows the wrong font.
+    fn load_fonts(&mut self, first: bool) {
+        let fonts = theme::install_fonts(&self.ctx, std::slice::from_ref(&self.themes[self.theme]));
+        if first {
+            self.fonts = fonts;
+        } else {
+            self.next_fonts = Some(fonts);
+            self.ctx.request_discard("theme fonts");
+        }
     }
 
     /// Rebuilds the keymap and menu bar; needed when keys or the theme change,
@@ -316,6 +337,7 @@ impl Folio {
             return;
         }
         self.theme = i;
+        self.load_fonts(false);
         self.rebuild_keys();
         if remember {
             let name = self.theme().name.clone();
@@ -1462,6 +1484,9 @@ impl eframe::App for Folio {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
+        if let Some(fonts) = self.next_fonts.take() {
+            self.fonts = fonts;
+        }
 
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.confirm_discard() {
@@ -1667,6 +1692,13 @@ fn main() -> eframe::Result {
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false),
+        // At most two screen buffers: eframe's default allows three, and a
+        // full-window buffer is over 10 MB on a Retina screen. An editor
+        // gains nothing from a third (typing even shows a frame sooner).
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            surface: eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY,
+            ..Default::default()
+        },
         ..Default::default()
     };
     eframe::run_native(

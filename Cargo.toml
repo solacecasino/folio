@@ -13,7 +13,11 @@ default = ["wasi-plugins"]
 wasi-plugins = ["dep:folio_plugin"]
 
 [dependencies]
-eframe = "0.37.0"
+memmap2 = "0.9.12"
+# Without eframe's system font loader: Folio loads its own fonts.
+eframe = { version = "0.37.0", default-features = false, features = [
+    "accesskit", "clipboard", "default_fonts", "links", "wayland", "wgpu", "x11",
+] }
 folio_plugin = { path = "crates/folio_plugin", optional = true }
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }

@@ -479,15 +479,28 @@ impl FontMap {
     }
 }
 
-/// Registers every font from every theme with egui up front, so switching
-/// themes never references a font that isn't loaded yet.
+/// A font file, memory-mapped rather than copied: the system shares mapped
+/// pages and doesn't count them as Folio's memory. Read into memory if it
+/// can't be mapped.
+fn font_data(path: &std::path::Path) -> Option<FontData> {
+    let file = std::fs::File::open(path).ok()?;
+    // SAFETY: font files aren't changed while Folio runs; if one were
+    // replaced in place, reading it could fault, as with any mapped file.
+    match unsafe { memmap2::Mmap::map(&file) } {
+        Ok(map) => Some(FontData::from_blob(std::sync::Arc::new(map), 0)),
+        Err(_) => std::fs::read(path).ok().map(FontData::from_owned),
+    }
+}
+
+/// Registers the fonts of `themes` with egui (Folio passes just the current
+/// theme), plus the system's symbol fonts as fallbacks.
 pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
     let mut defs = FontDefinitions::default();
     // The system's symbol font goes last in every chain, so arrows and the
     // like show instead of boxes.
-    for (i, bytes) in symbol_fonts().into_iter().filter_map(|p| std::fs::read(p).ok()).enumerate() {
+    for (i, data) in symbol_fonts().iter().filter_map(|p| font_data(p)).enumerate() {
         let name = format!("symbols-{i}");
-        defs.font_data.insert(name.clone(), FontData::from_owned(bytes).into());
+        defs.font_data.insert(name.clone(), data.into());
         for family in [FontFamily::Proportional, FontFamily::Monospace] {
             defs.families.entry(family).or_default().push(name.clone());
         }
@@ -514,12 +527,12 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
                 let key = match loaded.get(&path) {
                     Some(k) => k.clone(),
                     None => {
-                        let Ok(bytes) = std::fs::read(&path) else {
+                        let Some(data) = font_data(&path) else {
                             eprintln!("folio: couldn't read font {}", path.display());
                             continue;
                         };
                         let k = format!("file:{}", path.display());
-                        defs.font_data.insert(k.clone(), FontData::from_owned(bytes).into());
+                        defs.font_data.insert(k.clone(), data.into());
                         loaded.insert(path, k.clone());
                         k
                     }
