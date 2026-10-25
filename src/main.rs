@@ -63,6 +63,11 @@ struct Folio {
     /// Fonts for a theme just switched to: egui loads them for the next
     /// pass, so they replace `fonts` there (see `load_fonts`).
     next_fonts: Option<FontMap>,
+    /// The largest texture egui may make (see `raw_input_hook`), and the zoom
+    /// and screen scale its text texture was last rebuilt for.
+    texture_side: usize,
+    texture_scale: Option<(f32, f32)>,
+    scale_changed_at: Option<f64>,
 
     settings: Settings,
     user_keys: std::collections::BTreeMap<String, String>,
@@ -151,6 +156,9 @@ impl Folio {
             theme: 0,
             fonts: FontMap::default(),
             next_fonts: None,
+            texture_side: 2048,
+            texture_scale: None,
+            scale_changed_at: None,
             settings: Settings::default(),
             user_keys: Default::default(),
             keymap: Keymap::default(),
@@ -273,6 +281,30 @@ impl Folio {
         } else {
             self.next_fonts = Some(fonts);
             self.ctx.request_discard("theme fonts");
+        }
+    }
+
+    /// After zooming (or moving to a screen with another scale), the text
+    /// texture still holds letters at every size passed through, up to its
+    /// 16 MB cap. egui starts a fresh one only when its text options change,
+    /// so once the zoom has settled for a second, the texture size limit
+    /// switches between 2048 and 2047 (no visible difference).
+    fn trim_text_texture(&mut self, ctx: &egui::Context, now: f64) {
+        let scale = Some((self.editor.zoom, ctx.pixels_per_point()));
+        if scale != self.texture_scale {
+            // The first frame only notes the scale: there's nothing to trim yet.
+            if self.texture_scale.is_some() {
+                self.scale_changed_at = Some(now);
+            }
+            self.texture_scale = scale;
+        }
+        if let Some(t) = self.scale_changed_at {
+            if now - t >= 1.0 {
+                self.scale_changed_at = None;
+                self.texture_side = if self.texture_side == 2048 { 2047 } else { 2048 };
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(1.0 - (now - t)));
+            }
         }
     }
 
@@ -1481,12 +1513,22 @@ impl Folio {
 }
 
 impl eframe::App for Folio {
+    /// Caps egui's textures at about 2048 pixels a side. egui sizes its text
+    /// texture (every letter drawn, at every size) to the widest the GPU
+    /// allows, 16384 on a Mac, so each row of letters cost 64 KB and zooming
+    /// in and out a few times took Folio from 70 MB to over 300. At 2048 the
+    /// texture tops out at 16 MB, and egui clears it when it's nearly full.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        raw_input.max_texture_side = Some(raw_input.max_texture_side.unwrap_or(self.texture_side).min(self.texture_side));
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
         if let Some(fonts) = self.next_fonts.take() {
             self.fonts = fonts;
         }
+        self.trim_text_texture(&ctx, now);
 
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.confirm_discard() {
