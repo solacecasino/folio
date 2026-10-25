@@ -60,17 +60,36 @@ interface document {
     /// Inserts text at the caret, replacing any selection. "\n" starts a
     /// new paragraph. Applied as one undo step. Needs `document.edit`.
     insert-text: func(text: string) -> result<_, denied>;
+
+    /// Replaces the text from `start` to `end` (an empty range inserts).
+    /// Positions refer to the document as this event saw it; if it has
+    /// changed since, the edit is dropped. Needs `document.edit`.
+    replace-range: func(start: position, end: position, text: string) -> result<_, denied>;
 }
 
 /// Talking to the person using Folio.
 interface host {
     enum level { debug, info, warn, error }
 
+    /// One line of a panel. With a command (one of the plugin's command
+    /// ids), the line is a link that runs it.
+    record panel-line {
+        text: string,
+        command: option<string>,
+    }
+
     /// Writes to Folio's log.
     log: func(level: level, message: string);
 
     /// Shows a short message in the editor for a few seconds.
     notify: func(message: string);
+
+    /// Shows text in the status line (`%plugin_status%`); none clears it.
+    set-status: func(text: option<string>);
+
+    /// Fills one of the panels declared in plugin.toml (`[[panels]]`). People
+    /// place it with `kind = "plugin"` in settings.toml.
+    set-panel: func(id: string, lines: list<panel-line>);
 }
 
 /// What a plugin implements.

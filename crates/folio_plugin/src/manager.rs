@@ -65,6 +65,7 @@ pub struct PluginInfo {
     pub description: String,
     pub author: String,
     pub commands: Vec<Command>,
+    pub panels: Vec<crate::manifest::Panel>,
     pub capabilities: Capabilities,
     pub dir: PathBuf,
 }
@@ -89,6 +90,7 @@ impl PluginPackage {
             description: m.description.clone(),
             author: m.author.clone(),
             commands: m.commands.clone(),
+            panels: m.panels.clone(),
             capabilities: m.capabilities.clone(),
             dir: self.dir.clone(),
         }
@@ -203,7 +205,14 @@ pub(crate) async fn instantiate(
 ) -> Result<Instance, PluginError> {
     let name = package.manifest.name.clone();
     let wasi = sandbox::wasi_context(&package.manifest, &package.manifest_path).await?;
-    let state = PluginState::new(name.clone(), package.manifest.capabilities.clone(), wasi, outputs, limits.clone());
+    let state = PluginState::new(
+        name.clone(),
+        package.manifest.capabilities.clone(),
+        &package.manifest.panels,
+        wasi,
+        outputs,
+        limits.clone(),
+    );
     let mut store = Store::new(&loader.engine, state);
     store.limiter(|s| &mut s.store_limits);
     // Checked every epoch tick (about 10 ms): yield so other plugins and

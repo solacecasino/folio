@@ -12,6 +12,10 @@
 //! id = "set-goal"
 //! label = "Set Word Goal"
 //!
+//! [[panels]]                        # filled with set-panel
+//! id = "goal"
+//! title = "Word Goal"
+//!
 //! [capabilities]
 //! document = ["read", "edit"]       # selection and metadata; inserting text
 //! filesystem = [{ path = "~/Notes", access = "read" }]   # seen inside as /Notes
@@ -48,8 +52,18 @@ pub struct Manifest {
     pub events: Vec<String>,
     #[serde(default)]
     pub commands: Vec<Command>,
+    /// Panels the plugin can fill with `set-panel`.
+    #[serde(default)]
+    pub panels: Vec<Panel>,
     #[serde(default)]
     pub capabilities: Capabilities,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Panel {
+    pub id: String,
+    pub title: String,
 }
 
 fn default_wasm() -> PathBuf {

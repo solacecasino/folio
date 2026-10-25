@@ -73,6 +73,25 @@ fn run(command: &str) -> Result<(), String> {
             Ok(_) => say("connected"),
             Err(e) => say(format!("connect failed: {e}")),
         },
+        "replace" => {
+            let at = |paragraph, character| document::Position { paragraph, character };
+            match document::replace_range(at(0, 5), at(0, 0), "Howdy") {
+                Ok(()) => say("replaced"),
+                Err(e) => say(format!("replace denied: {}", why(e))),
+            }
+        }
+        "status" => {
+            host::set_status((!arg.is_empty()).then_some(arg));
+            say("status set");
+        }
+        "panel" => {
+            let line = |text: &str, command: Option<&str>| host::PanelLine {
+                text: text.into(),
+                command: command.map(Into::into),
+            };
+            host::set_panel(arg, &[line("Goal: 250 words", None), line("Change goal", Some("count"))]);
+            say("panel set");
+        }
         "env" => say(format!("{} environment variables", std::env::vars().count())),
         "count" => say(format!("count {}", COUNT.fetch_add(1, Ordering::SeqCst) + 1)),
         "spam" => {

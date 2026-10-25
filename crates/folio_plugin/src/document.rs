@@ -89,6 +89,15 @@ impl Event {
 pub enum Edit {
     /// Insert at the caret, replacing any selection; `\n` starts a paragraph.
     InsertText(String),
+    /// Replace `start..end` (in document order) with `text`.
+    ReplaceRange { start: Position, end: Position, text: String },
+}
+
+/// One line of a plugin's panel; with a command, clicking it runs that command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelLine {
+    pub text: String,
+    pub command: Option<String>,
 }
 
 /// How serious a log line is.
@@ -112,5 +121,9 @@ pub enum PluginOutput {
     Edit { plugin: String, revision: u64, edit: Edit },
     /// Show this message briefly.
     Notify { plugin: String, message: String },
+    /// Show this in the status line; None clears it.
+    Status { plugin: String, text: Option<String> },
+    /// New contents for one of the plugin's declared panels.
+    Panel { plugin: String, id: String, lines: Vec<PanelLine> },
     Log { plugin: String, level: LogLevel, message: String },
 }

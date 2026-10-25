@@ -17,7 +17,9 @@ Folio/
 | Linux | `$XDG_CONFIG_HOME/folio`, usually `~/.config/folio` |
 
 Set `FOLIO_CONFIG_DIR` to use another folder, such as a portable setup on a
-USB stick. Open it with **Folio → Open Config Folder**. Folio reloads these files as soon
+USB stick. Open it with **Folio → Open Config Folder**. Folio also keeps
+`state.json` there (window size and place, File → Open Recent), which you
+don't need to edit. Folio reloads these files as soon
 as you save them; **Folio → Reload Config** (`Cmd+Shift+R`) forces a reload.
 If a file has a mistake, Folio keeps running with the defaults and shows the
 problem in red at the bottom of the window.
@@ -89,6 +91,7 @@ menus show your shortcuts. `Cmd+/` lists every current binding.
 | `next-theme` `zoom-in` `zoom-out` `zoom-reset` | View |
 | `toggle-status` `toggle-panels` `help` | Show or hide things |
 | `reload-config` `open-config-folder` | Config |
+| `log` | View → Log: adapters' and plugins' output and errors |
 | `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
 
@@ -120,6 +123,8 @@ modeled on foobar2000's title formatting.
 | `%page%` `%pages%` | Caret's page and page count (in headers and footers: that page) |
 | `%reading_time%` | e.g. `4 min` |
 | `%selection_words%` | Words selected (empty when nothing is) |
+| `%adapter_status%` | What adapters and plugins show in the status line |
+| `%plugin_status%` | Just the plugins' part |
 | `%file%` `%path%` | Document name, full path (empty if unsaved) |
 | `%dirty%` | `1` with unsaved changes, else empty |
 | `%theme%` `%style%` `%zoom%` | Current theme, paragraph style, zoom percent |
@@ -156,6 +161,11 @@ kind = "versions"       # this document's saved versions; click Restore
 [[panels]]
 kind = "adapter"        # filled by an adapter
 adapter = "Writing Tools"
+id = "goal"
+
+[[panels]]
+kind = "plugin"         # filled by a WebAssembly plugin
+plugin = "Word Goals"
 id = "goal"
 ```
 

@@ -114,6 +114,11 @@ title = "Word Goal"
   commands. `start = "launch"` starts it when Folio opens; use it only if the
   adapter needs events from the start.
 - When Folio quits it sends `shutdown`, then stops the program.
+- Whatever the program prints to **stderr** shows in **View → Log**, with
+  `log` messages and errors, so you can debug without a terminal.
+- `links = { join = "join" }` makes the adapter open `folio://join#...`
+  links: clicking one (on any platform) runs that command with the whole
+  link as its `argument`. Folio Link uses this for invites.
 - Users place your panels in their `settings.toml`
   (`kind = "adapter"`, `adapter = "<name>"`, `id = "<panel id>"`). An
   adapter whose panel is on screen is started automatically, after approval.
@@ -147,8 +152,8 @@ Only adapters send requests. Folio sends notifications.
 
 | Method | Params | When |
 |---|---|---|
-| `initialize` | `folio` (version), `protocol` (currently `3`), `permissions` | Right after starting |
-| `command` | `command`: the command `id` | You picked one of its commands |
+| `initialize` | `folio` (version), `protocol` (currently `4`), `permissions` | Right after starting |
+| `command` | `command`: the command `id`; `argument` when there is one, such as the `folio://` link that was opened | You picked one of its commands, or opened a link it handles |
 | `event` | `kind` plus the fields below | Something happened, if listed in `events` |
 | `undo`, `redo` | | During a shared session you started with `session.set` and `handles_undo: true`, instead of Folio's own undo |
 | `shutdown` | | Folio is quitting; exit soon |
@@ -238,6 +243,7 @@ things, so an adapter written for an older version keeps working.
 - **3** added printing (`doc.print_model`, `ui.save_dialog`), shared sessions
   (`snapshot`, `doc.merge`, `session.set`, `presence.set`, `undo`/`redo`),
   `ui.confirm`, and `menu =` for commands.
+- **4** added `argument` on `command` and `links` in `adapter.toml`.
 
 ## Example exchange
 

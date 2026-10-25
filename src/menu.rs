@@ -20,6 +20,8 @@ pub struct MenuContent<'a> {
     pub adapters: Vec<(String, Vec<AdapterItem>)>,
     /// WebAssembly plugins' commands, shown in a Plugins menu.
     pub plugins: Vec<crate::plugins::PluginCommand>,
+    /// Documents for File → Open Recent, newest first.
+    pub recent: Vec<std::path::PathBuf>,
     pub keymap: &'a Keymap,
 }
 
@@ -35,6 +37,8 @@ pub struct AdapterItem {
 enum Entry {
     Item(Command, String),
     Separator,
+    /// A nested menu, such as Open Recent.
+    Submenu(String, Vec<Entry>),
     About,
     /// Items macOS provides itself (Hide, Minimize, ...).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -94,6 +98,18 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
             entries: vec![
                 b(Builtin::New),
                 b(Builtin::Open),
+                Entry::Submenu(
+                    "Open Recent".into(),
+                    content
+                        .recent
+                        .iter()
+                        .map(|p| {
+                            let command = Command::OpenFile(p.clone());
+                            let label = command.label();
+                            Entry::Item(command, label)
+                        })
+                        .collect(),
+                ),
                 Entry::Separator,
                 b(Builtin::Save),
                 b(Builtin::SaveAs),
@@ -129,6 +145,7 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
                 b(Builtin::ToggleStatus),
                 b(Builtin::TogglePanels),
                 b(Builtin::Help),
+                b(Builtin::Log),
             ],
         },
     ];
@@ -214,29 +231,7 @@ mod native {
 
             for section in sections(content) {
                 let sub = Submenu::new(section.title, true);
-                for entry in section.entries {
-                    let item: Box<dyn IsMenuItem> = match entry {
-                        Entry::Item(command, label) => {
-                            let accel = content
-                                .keymap
-                                .chord_for(&command)
-                                .and_then(|c| c.accelerator().parse::<Accelerator>().ok());
-                            let id = format!("m{}", commands.len());
-                            commands.push(command);
-                            Box::new(MenuItem::with_id(id, label, true, accel))
-                        }
-                        Entry::Separator => Box::new(PredefinedMenuItem::separator()),
-                        Entry::About => Box::new(PredefinedMenuItem::about(Some("About Folio"), Some(about(icon)))),
-                        Entry::System(s) => Box::new(match s {
-                            SystemItem::Hide => PredefinedMenuItem::hide(None),
-                            SystemItem::HideOthers => PredefinedMenuItem::hide_others(None),
-                            SystemItem::ShowAll => PredefinedMenuItem::show_all(None),
-                            SystemItem::Minimize => PredefinedMenuItem::minimize(None),
-                            SystemItem::Fullscreen => PredefinedMenuItem::fullscreen(None),
-                        }),
-                    };
-                    sub.append(item.as_ref()).expect("menu builds");
-                }
+                fill(&sub, section.entries, content, icon, &mut commands);
                 menu.append(&sub).expect("menu builds");
                 if section.key == "window" {
                     window_menu = Some(sub);
@@ -280,11 +275,43 @@ mod native {
         pub fn show(&mut self, _ui: &mut egui::Ui, _rect: egui::Rect, _theme: &Theme) {}
     }
 
+    /// Adds entries to a menu; nested menus recurse.
+    fn fill(sub: &Submenu, entries: Vec<Entry>, content: &MenuContent<'_>, icon: &egui::IconData, commands: &mut Vec<Command>) {
+        for entry in entries {
+            let item: Box<dyn IsMenuItem> = match entry {
+                Entry::Item(command, label) => {
+                    let accel = content
+                        .keymap
+                        .chord_for(&command)
+                        .and_then(|c| c.accelerator().parse::<Accelerator>().ok());
+                    let id = format!("m{}", commands.len());
+                    commands.push(command);
+                    Box::new(MenuItem::with_id(id, label, true, accel))
+                }
+                Entry::Submenu(title, children) => {
+                    let nested = Submenu::new(title, !children.is_empty());
+                    fill(&nested, children, content, icon, commands);
+                    Box::new(nested)
+                }
+                Entry::Separator => Box::new(PredefinedMenuItem::separator()),
+                Entry::About => Box::new(PredefinedMenuItem::about(Some("About Folio"), Some(about(icon)))),
+                Entry::System(s) => Box::new(match s {
+                    SystemItem::Hide => PredefinedMenuItem::hide(None),
+                    SystemItem::HideOthers => PredefinedMenuItem::hide_others(None),
+                    SystemItem::ShowAll => PredefinedMenuItem::show_all(None),
+                    SystemItem::Minimize => PredefinedMenuItem::minimize(None),
+                    SystemItem::Fullscreen => PredefinedMenuItem::fullscreen(None),
+                }),
+            };
+            sub.append(item.as_ref()).expect("menu builds");
+        }
+    }
+
     fn about(icon: &egui::IconData) -> muda::AboutMetadata {
         AboutMetadataBuilder::new()
-            .name(Some("Folio"))
+            .name(Some(crate::plugins::EDITION))
             .version(Some(crate::plugins::version()))
-            .comments(Some("Bare when installed, insanely customizable."))
+            .comments(Some(crate::plugins::about_text()))
             .icon(Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok())
             .build()
     }
@@ -298,9 +325,36 @@ mod drawn {
     use crate::keys::Command;
     use crate::theme::{Theme, color};
 
+    /// An entry with its shortcut text.
+    struct Shown {
+        entry: Entry,
+        keys: String,
+        children: Vec<Shown>,
+    }
+
+    fn shown(entries: Vec<Entry>, content: &MenuContent<'_>) -> Vec<Shown> {
+        entries
+            .into_iter()
+            .map(|e| {
+                let keys = match &e {
+                    Entry::Item(c, _) => content.keymap.chord_for(c).map(|c| c.accelerator()),
+                    _ => None,
+                };
+                let (entry, children) = match e {
+                    Entry::Submenu(title, children) => (Entry::Submenu(title, Vec::new()), shown(children, content)),
+                    other => (other, Vec::new()),
+                };
+                Shown {
+                    entry,
+                    keys: keys.unwrap_or_default(),
+                    children,
+                }
+            })
+            .collect()
+    }
+
     pub struct MenuBar {
-        /// (title, entries with their shortcut text)
-        menus: Vec<(&'static str, Vec<(Entry, String)>)>,
+        menus: Vec<(&'static str, Vec<Shown>)>,
         clicked: Vec<Command>,
         about_open: bool,
         icon: Option<egui::TextureHandle>,
@@ -309,23 +363,7 @@ mod drawn {
 
     impl MenuBar {
         pub fn install(_ctx: &egui::Context, icon: &egui::IconData, content: &MenuContent<'_>) -> Self {
-            let menus = sections(content)
-                .into_iter()
-                .map(|s| {
-                    let entries = s
-                        .entries
-                        .into_iter()
-                        .map(|e| {
-                            let keys = match &e {
-                                Entry::Item(c, _) => content.keymap.chord_for(c).map(|c| c.accelerator()),
-                                _ => None,
-                            };
-                            (e, keys.unwrap_or_default())
-                        })
-                        .collect();
-                    (s.title, entries)
-                })
-                .collect();
+            let menus = sections(content).into_iter().map(|s| (s.title, shown(s.entries, content))).collect();
             Self {
                 menus,
                 clicked: Vec::new(),
@@ -352,25 +390,7 @@ mod drawn {
             egui::MenuBar::new().ui(&mut bar, |ui| {
                 for (title, entries) in &self.menus {
                     ui.menu_button(RichText::new(*title).color(fg), |ui| {
-                        ui.set_min_width(220.0);
-                        for (entry, keys) in entries {
-                            match entry {
-                                Entry::Item(command, label) => {
-                                    if ui.add(egui::Button::new(label.as_str()).shortcut_text(keys.as_str())).clicked() {
-                                        self.clicked.push(command.clone());
-                                    }
-                                }
-                                Entry::Separator => {
-                                    ui.separator();
-                                }
-                                Entry::About => {
-                                    if ui.button("About Folio").clicked() {
-                                        self.about_open = true;
-                                    }
-                                }
-                                Entry::System(_) => {}
-                            }
-                        }
+                        draw(ui, entries, &mut self.clicked, &mut self.about_open);
                     });
                 }
             });
@@ -391,11 +411,38 @@ mod drawn {
                     .show(ui.ctx(), |ui| {
                         ui.vertical_centered(|ui| {
                             ui.add(egui::Image::new(&*icon).fit_to_exact_size(egui::vec2(96.0, 96.0)));
-                            ui.heading("Folio");
+                            ui.heading(crate::plugins::EDITION);
                             ui.label(format!("Version {}", crate::plugins::version()));
-                            ui.label("Bare when installed, insanely customizable.");
+                            ui.label(crate::plugins::about_text());
                         });
                     });
+            }
+        }
+    }
+
+    fn draw(ui: &mut egui::Ui, entries: &[Shown], clicked: &mut Vec<Command>, about_open: &mut bool) {
+        ui.set_min_width(220.0);
+        for s in entries {
+            match &s.entry {
+                Entry::Item(command, label) => {
+                    if ui.add(egui::Button::new(label.as_str()).shortcut_text(s.keys.as_str())).clicked() {
+                        clicked.push(command.clone());
+                    }
+                }
+                Entry::Submenu(title, _) => {
+                    ui.add_enabled_ui(!s.children.is_empty(), |ui| {
+                        ui.menu_button(title.as_str(), |ui| draw(ui, &s.children, clicked, about_open));
+                    });
+                }
+                Entry::Separator => {
+                    ui.separator();
+                }
+                Entry::About => {
+                    if ui.button(format!("About {}", crate::plugins::EDITION)).clicked() {
+                        *about_open = true;
+                    }
+                }
+                Entry::System(_) => {}
             }
         }
     }

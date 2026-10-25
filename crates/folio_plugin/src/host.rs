@@ -9,8 +9,8 @@ use wasmtime::StoreLimits;
 use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
-use crate::document::{DocumentSnapshot, Edit, LogLevel, PluginOutput};
-use crate::manifest::Capabilities;
+use crate::document::{DocumentSnapshot, Edit, LogLevel, PanelLine, PluginOutput};
+use crate::manifest::{Capabilities, Panel};
 use crate::sandbox::Limits;
 
 wasmtime::component::bindgen!({
@@ -29,6 +29,8 @@ use folio::plugin::host::{self as wit_host, Level};
 pub(crate) struct PluginState {
     pub plugin: String,
     capabilities: Capabilities,
+    /// Ids of the panels its manifest declares.
+    panels: Vec<String>,
     /// The document as of the event being handled; None between events.
     pub snapshot: Option<Arc<DocumentSnapshot>>,
     outputs: Sender<PluginOutput>,
@@ -44,10 +46,18 @@ pub(crate) struct PluginState {
 }
 
 impl PluginState {
-    pub fn new(plugin: String, capabilities: Capabilities, wasi: WasiCtx, outputs: Sender<PluginOutput>, limits: Limits) -> Self {
+    pub fn new(
+        plugin: String,
+        capabilities: Capabilities,
+        panels: &[Panel],
+        wasi: WasiCtx,
+        outputs: Sender<PluginOutput>,
+        limits: Limits,
+    ) -> Self {
         Self {
             plugin,
             capabilities,
+            panels: panels.iter().map(|p| p.id.clone()).collect(),
             snapshot: None,
             outputs,
             store_limits: limits.store_limits(),
@@ -115,6 +125,13 @@ fn position(p: crate::Position) -> wit_doc::Position {
     }
 }
 
+fn from_wit(p: wit_doc::Position) -> crate::Position {
+    crate::Position {
+        paragraph: p.paragraph,
+        character: p.character,
+    }
+}
+
 impl wit_doc::Host for PluginState {
     fn get_selection(&mut self) -> Result<Option<wit_doc::Selection>, Denied> {
         let doc = self.readable()?;
@@ -153,6 +170,24 @@ impl wit_doc::Host for PluginState {
         });
         Ok(())
     }
+
+    fn replace_range(&mut self, start: wit_doc::Position, end: wit_doc::Position, text: String) -> Result<(), Denied> {
+        if !self.capabilities.can_edit_document() {
+            return Err(Denied::MissingCapability);
+        }
+        let revision = self.snapshot.as_ref().ok_or(Denied::NoDocument)?.revision;
+        if !self.spend(text.len()) {
+            return Err(Denied::LimitReached);
+        }
+        let (start, end) = (from_wit(start), from_wit(end));
+        let (start, end) = if end < start { (end, start) } else { (start, end) };
+        self.send(PluginOutput::Edit {
+            plugin: self.plugin.clone(),
+            revision,
+            edit: Edit::ReplaceRange { start, end, text },
+        });
+        Ok(())
+    }
 }
 
 impl wit_host::Host for PluginState {
@@ -177,6 +212,36 @@ impl wit_host::Host for PluginState {
             self.send(PluginOutput::Notify {
                 plugin: self.plugin.clone(),
                 message,
+            });
+        }
+    }
+
+    fn set_status(&mut self, text: Option<String>) {
+        if self.spend(text.as_ref().map_or(0, String::len)) {
+            self.send(PluginOutput::Status {
+                plugin: self.plugin.clone(),
+                text,
+            });
+        }
+    }
+
+    fn set_panel(&mut self, id: String, lines: Vec<wit_host::PanelLine>) {
+        if !self.panels.contains(&id) {
+            self.log(Level::Warn, format!("set-panel: \"{id}\" isn't one of the [[panels]] in plugin.toml"));
+            return;
+        }
+        let bytes = lines.iter().map(|l| l.text.len()).sum();
+        if self.spend(bytes) {
+            self.send(PluginOutput::Panel {
+                plugin: self.plugin.clone(),
+                id,
+                lines: lines
+                    .into_iter()
+                    .map(|l| PanelLine {
+                        text: l.text,
+                        command: l.command,
+                    })
+                    .collect(),
             });
         }
     }

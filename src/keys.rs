@@ -39,6 +39,7 @@ pub enum Builtin {
     OpenConfigFolder,
     OpenAdaptersFolder,
     Adapters,
+    Log,
 }
 
 /// (command, name in keys.toml, menu label, default keys)
@@ -66,6 +67,7 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::ToggleStatus, "toggle-status", "Show Status Line", &["cmd+."]),
     (Builtin::TogglePanels, "toggle-panels", "Show Panels", &["cmd+\\"]),
     (Builtin::Help, "help", "Keyboard Shortcuts", &["cmd+/"]),
+    (Builtin::Log, "log", "Log", &["cmd+alt+l"]),
     (Builtin::ReloadConfig, "reload-config", "Reload Config", &["cmd+shift+r"]),
     (Builtin::OpenConfigFolder, "open-config-folder", "Open Config Folder", &[]),
     (Builtin::OpenAdaptersFolder, "open-adapters-folder", "Open Adapters Folder", &[]),
@@ -81,6 +83,8 @@ pub enum Command {
     Adapter(String, String),
     /// Run a WebAssembly plugin's command: plugin name, command id.
     Plugin(String, String),
+    /// Open this document (File → Open Recent). Not bindable in keys.toml.
+    OpenFile(std::path::PathBuf),
 }
 
 impl Command {
@@ -89,6 +93,7 @@ impl Command {
             Command::Builtin(b) => entry(*b).2.to_owned(),
             Command::Style(s) => s.clone(),
             Command::Adapter(_, id) | Command::Plugin(_, id) => id.clone(),
+            Command::OpenFile(p) => p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
         }
     }
 }
@@ -104,6 +109,7 @@ impl fmt::Display for Command {
             Command::Style(s) => write!(f, "style {s}"),
             Command::Adapter(name, id) => write!(f, "adapter \"{name}\" {id}"),
             Command::Plugin(name, id) => write!(f, "plugin \"{name}\" {id}"),
+            Command::OpenFile(p) => write!(f, "open {}", p.display()),
         }
     }
 }

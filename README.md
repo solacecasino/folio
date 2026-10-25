@@ -22,7 +22,8 @@ of [foobar2000](https://www.foobar2000.org/).
 - **A formatting language** for the status line, window title, page headers and footers, and panels: `%words% $plural(%words%,word)[ · %selection_words% selected]`
 - **Panels you arrange:** an outline, your own stats panels, and adapter panels on any side, all off until you add them
 - **Plugins and adapters:** everything optional is an add-on you choose. Plugins are sandboxed WebAssembly that can only reach what they declare; adapters are separate programs in any language for external tools
-- **Your files:** `.folio` documents are readable JSON on your own disk
+- **Your files:** `.folio` documents are readable JSON on your own disk; File → Open Recent, and Folio remembers its window
+- **View → Log** shows what adapters and plugins print, for anyone building one
 - **Small and fast:** native, no Electron, nothing running in the background
 
 ## Install

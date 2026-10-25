@@ -12,6 +12,8 @@ mod editor;
 mod find;
 mod format;
 mod keys;
+mod links;
+mod log;
 mod menu;
 mod panels;
 mod pdf;
@@ -20,6 +22,7 @@ mod plugins;
 mod safety;
 mod settings;
 mod spell;
+mod state;
 mod theme;
 
 use std::collections::HashMap;
@@ -72,6 +75,10 @@ struct Folio {
     /// Whether the find bar had the keyboard last frame.
     find_focused: bool,
     show_versions: bool,
+    /// View → Log, when open.
+    log_window: Option<log::Window>,
+    /// The last error written to the log, so each is logged once.
+    logged_error: Option<String>,
     show_adapters: bool,
     /// The macOS spell checker, when spell checking is on.
     speller: Option<spell::Speller>,
@@ -92,6 +99,10 @@ struct Folio {
     error: Option<String>,
     menu: Option<MenuBar>,
     adapters: Host,
+    /// Window placement and recent documents, saved in state.json.
+    state: state::State,
+    /// The window's latest placement and when it last changed, until saved.
+    window_moved: Option<(state::WindowRect, f64)>,
     /// WebAssembly plugins (nothing in folio-lite).
     plugins: plugins::Plugins,
     /// The last plugin edit applied: (revision it was made against, the
@@ -107,8 +118,9 @@ struct Folio {
 }
 
 impl Folio {
-    fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>, icon: egui::IconData) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>, icon: egui::IconData, state: state::State) -> Self {
         settings::write_examples();
+        links::install(&cc.egui_ctx);
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
 
         let ctx = cc.egui_ctx.clone();
@@ -140,6 +152,8 @@ impl Folio {
             find: find::FindBar::default(),
             find_focused: false,
             show_versions: false,
+            log_window: None,
+            logged_error: None,
             show_adapters: false,
             speller: None,
             versions: Vec::new(),
@@ -155,6 +169,8 @@ impl Folio {
             adapters: host,
             plugins: plugins::Plugins::start(&cc.egui_ctx),
             plugin_edit: None,
+            state,
+            window_moved: None,
             notice: None,
             sent_revision: (0, 0.0),
             appearance_for: None,
@@ -266,6 +282,7 @@ impl Folio {
                 })
                 .collect(),
             plugins: self.plugins.commands(),
+            recent: self.state.recent.clone(),
             keymap: &self.keymap,
         };
         self.menu = Some(MenuBar::install(&self.ctx, &self.icon, &content));
@@ -312,10 +329,49 @@ impl Folio {
                 self.editor.zoom = zoom;
                 self.versions_stale = true;
                 self.adapters.emit("opened", json!({ "path": path }));
+                self.remember(&path);
+                log::push("Folio", log::Level::Info, format!("Opened {}", path.display()));
                 self.path = Some(path);
                 self.error = None;
             }
             Err(e) => self.error = Some(format!("Couldn't open {}: {e}", path.display())),
+        }
+    }
+
+    /// Adds a document to Open Recent.
+    fn remember(&mut self, path: &std::path::Path) {
+        self.state.add_recent(path);
+        self.state.save();
+        self.rebuild_keys();
+    }
+
+    /// Saves the window's size and place once it has stopped changing.
+    fn track_window(&mut self, ctx: &egui::Context, now: f64) {
+        let rect = ctx.input(|i| {
+            let v = i.viewport();
+            let (outer, inner) = (v.outer_rect?, v.inner_rect?);
+            (v.fullscreen != Some(true) && v.maximized != Some(true)).then_some(state::WindowRect {
+                x: outer.min.x,
+                y: outer.min.y,
+                width: inner.width(),
+                height: inner.height(),
+            })
+        });
+        if let Some(rect) = rect
+            && self.state.window != Some(rect)
+            && self.window_moved.is_none_or(|(r, _)| r != rect)
+        {
+            self.window_moved = Some((rect, now));
+        }
+        if let Some((rect, at)) = self.window_moved
+            && now - at > 1.0
+        {
+            self.state.window = Some(rect);
+            self.state.save();
+            self.window_moved = None;
+        }
+        if self.window_moved.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(1100));
         }
     }
 
@@ -344,6 +400,9 @@ impl Folio {
             Ok(()) => {
                 self.adapters.emit("saved", json!({ "path": path }));
                 self.plugins.saved(&path);
+                if self.path.as_ref() != Some(&path) {
+                    self.remember(&path);
+                }
                 self.path = Some(path);
                 self.editor.dirty = false;
                 self.error = None;
@@ -489,6 +548,11 @@ impl Folio {
                     self.error = Some(e);
                 }
             }
+            Command::OpenFile(path) => {
+                if self.confirm_discard() {
+                    self.open_path(path);
+                }
+            }
         }
     }
 
@@ -570,11 +634,18 @@ impl Folio {
                 self.persist(|| settings::save_value("show_panels", on));
             }
             Builtin::Help => self.show_help = !self.show_help,
+            Builtin::Log => {
+                self.log_window = match self.log_window.take() {
+                    Some(_) => None,
+                    None => Some(log::Window::default()),
+                }
+            }
             Builtin::Versions => {
                 self.show_versions = !self.show_versions;
                 self.versions_stale = true;
             }
             Builtin::ReloadConfig => {
+                self.plugins.reload();
                 self.load_config(false);
                 self.watch.forget_own_writes();
                 self.notice = Some(("Config reloaded".into(), now));
@@ -644,6 +715,37 @@ impl Folio {
         self.rebuild_keys();
     }
 
+    /// Documents and folio:// links the system asked Folio to open.
+    fn open_incoming(&mut self, now: f64) {
+        for item in links::take() {
+            match &item {
+                links::Incoming::File(path) => {
+                    let is_addon = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) || path.is_dir();
+                    if is_addon {
+                        self.add_adapter(path, now);
+                    } else if self.confirm_discard() {
+                        self.open_path(path.clone());
+                    }
+                }
+                links::Incoming::Link { kind, .. } => match self.adapters.link_handler(kind) {
+                    Some((adapter, command)) => {
+                        if let Err(e) = self.adapters.run_command_with(&adapter, &command, item.url().as_deref()) {
+                            self.error = Some(e);
+                        }
+                    }
+                    None if kind == "join" => {
+                        self.error = Some(
+                            "This is a Folio Link invite. Add the Folio Link adapter (Folio → Adapters… → Browse Adapters) \
+                             and open the link again."
+                                .into(),
+                        )
+                    }
+                    None => self.error = Some(format!("Nothing installed opens folio://{kind} links")),
+                },
+            }
+        }
+    }
+
     /// Files dropped on the window: an adapter's zip or folder is added, a
     /// document is opened.
     fn dropped_files(&mut self, ctx: &egui::Context, now: f64) {
@@ -702,7 +804,22 @@ impl Folio {
     }
 
     fn add_adapter(&mut self, source: &std::path::Path, now: f64) {
-        let staged = match adapters::stage(source) {
+        let unpacked = match adapters::unpack(source) {
+            Ok(u) => u,
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        };
+        match adapters::find_manifest(&unpacked.root, &["plugin.toml"]) {
+            Ok(Some(dir)) => return self.add_plugin(&dir, now),
+            Ok(None) => {}
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        }
+        let staged = match adapters::stage_unpacked(unpacked) {
             Ok(s) => s,
             Err(e) => {
                 self.error = Some(e);
@@ -745,6 +862,47 @@ impl Folio {
             Err(e) => self.error = Some(e),
         }
         self.reload_adapters();
+    }
+
+    /// Installs a WebAssembly plugin after showing what it can do.
+    fn add_plugin(&mut self, dir: &std::path::Path, now: f64) {
+        let d = match plugins::Plugins::describe(dir) {
+            Ok(d) => d,
+            Err(e) => {
+                self.error = Some(e);
+                return;
+            }
+        };
+        let by = if d.author.is_empty() { String::new() } else { format!(" by {}", d.author) };
+        let mut text = format!("Add the plugin “{}” {}{by}?", d.name, d.version);
+        if !d.description.is_empty() {
+            text += &format!("\n\n{}", d.description);
+        }
+        if d.can.is_empty() {
+            text += "\n\nIt asks for nothing: it can't see your document, files or the network.";
+        } else {
+            text += "\n\nIt will be able to:";
+            for c in &d.can {
+                text += &format!("\n•  {c}");
+            }
+            text += "\n\nPlugins run in a sandbox: they can't do anything beyond this.";
+        }
+        let ok = MessageDialog::new()
+            .set_title("Add plugin?")
+            .set_description(text)
+            .set_buttons(MessageButtons::OkCancel)
+            .show()
+            == MessageDialogResult::Ok;
+        if !ok {
+            return;
+        }
+        match self.plugins.install(dir) {
+            Ok(()) => {
+                self.notice = Some((format!("Added {}", d.name), now));
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e),
+        }
     }
 
     fn remove_adapter(&mut self, i: usize, now: f64) {
@@ -823,7 +981,11 @@ impl Folio {
         if let Some(sel) = self.editor.selected_text() {
             f.insert("selection_words".into(), sel.split_whitespace().count().to_string());
         }
-        let statuses: Vec<&str> = self.adapters.status_items().collect();
+        let plugin_statuses = self.plugins.status_items();
+        if !plugin_statuses.is_empty() {
+            f.insert("plugin_status".into(), plugin_statuses.join("   "));
+        }
+        let statuses: Vec<&str> = self.adapters.status_items().chain(plugin_statuses.iter().map(String::as_str)).collect();
         if !statuses.is_empty() {
             f.insert("adapter_status".into(), statuses.join("   "));
             // The older name for the same field.
@@ -934,7 +1096,30 @@ impl Folio {
                         self.notice = Some((format!("{plugin}'s edit was skipped because the document changed"), now));
                     }
                 }
-                plugins::Effect::Notify(message) => self.notice = Some((message, now)),
+                plugins::Effect::Replace {
+                    plugin,
+                    revision,
+                    start,
+                    end,
+                    text,
+                } => {
+                    let current = self.editor.revision;
+                    let fresh = revision == current || self.plugin_edit == Some((revision, current));
+                    let doc = &self.editor.doc;
+                    let valid = |p: doc::Pos| p.para < doc.paragraphs.len() && p.ch <= doc.paragraphs[p.para].len();
+                    if fresh && valid(start) && valid(end) {
+                        self.editor.replace_ranges(&[(start, end)], &text, &self.themes[self.theme]);
+                        self.plugin_edit = Some((revision, self.editor.revision));
+                    } else if !fresh {
+                        self.notice = Some((format!("{plugin}'s edit was skipped because the document changed"), now));
+                    } else {
+                        log::push(&plugin, log::Level::Warn, "replace-range was outside the document");
+                    }
+                }
+                plugins::Effect::Notify(message) => {
+                    log::push("Plugins", log::Level::Info, &message);
+                    self.notice = Some((message, now));
+                }
                 plugins::Effect::Problem(message) => self.error = Some(message),
                 plugins::Effect::CommandsChanged => self.rebuild_keys(),
             }
@@ -1167,6 +1352,8 @@ impl eframe::App for Folio {
             self.run(command, now);
         }
         self.dropped_files(&ctx, now);
+        self.open_incoming(now);
+        self.track_window(&ctx, now);
         self.service_adapters(now);
         self.service_plugins(now);
         self.safety_net(now);
@@ -1188,6 +1375,7 @@ impl eframe::App for Folio {
                 text_lines: &self.panel_lines,
                 fields: &field,
                 host: &self.adapters,
+                plugins: &self.plugins,
                 versions: &self.versions,
             };
             let actions = panels::show(&mut body_ui, &self.settings.panels, &cx);
@@ -1236,6 +1424,15 @@ impl eframe::App for Folio {
         }
         self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text, self.speller.as_mut());
 
+        if let Some(w) = &mut self.log_window
+            && !w.show(&ctx)
+        {
+            self.log_window = None;
+        }
+        if self.error.is_some() && self.error != self.logged_error {
+            log::push("Folio", log::Level::Error, self.error.clone().unwrap_or_default());
+        }
+        self.logged_error = self.error.clone();
         if self.show_versions {
             self.versions_window(&ctx);
         }
@@ -1269,14 +1466,32 @@ fn local_date_time() -> (String, String) {
 }
 
 fn main() -> eframe::Result {
-    let path = std::env::args_os().nth(1).map(PathBuf::from);
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        // Also how CI checks that each download starts.
+        println!("{} {}", plugins::EDITION, plugins::version());
+        return Ok(());
+    }
+    links::listen_early();
+    // A document to open, or a folio:// link (queued until the app is up).
+    let path = match std::env::args_os().nth(1) {
+        Some(arg) if arg.to_string_lossy().starts_with("folio://") => {
+            links::deliver(links::parse(&arg.to_string_lossy()));
+            None
+        }
+        arg => arg.map(PathBuf::from),
+    };
     let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG");
+    let state = state::State::load();
+    let mut viewport = egui::ViewportBuilder::default()
+        // eframe also uses the starting title as the app menu's name.
+        .with_title("Folio")
+        .with_icon(icon.clone())
+        .with_inner_size([1000.0, 1100.0]);
+    if let Some(w) = state.window {
+        viewport = viewport.with_inner_size([w.width, w.height]).with_position([w.x, w.y]);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            // eframe also uses the starting title as the app menu's name.
-            .with_title("Folio")
-            .with_icon(icon.clone())
-            .with_inner_size([1000.0, 1100.0])
+        viewport: viewport
             // Draw under a transparent titlebar so the theme colors the whole window.
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
@@ -1286,6 +1501,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Folio",
         options,
-        Box::new(move |cc| Ok(Box::new(Folio::new(cc, path, icon)))),
+        Box::new(move |cc| Ok(Box::new(Folio::new(cc, path, icon, state)))),
     )
 }

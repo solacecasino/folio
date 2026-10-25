@@ -52,6 +52,23 @@ jobs:
           python scripts/package.py
           python scripts/package.py --lite   # folio-lite: no plugin runtime
 
+      - name: Check that the downloads start
+        shell: bash
+        run: |
+          set -e
+          cd dist
+          for f in *; do
+            case "$f" in
+              *.tar.gz) tar xzf "$f" ;;
+              *.zip) python -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall('x-' + sys.argv[1])" "$f" ;;
+            esac
+          done
+          for exe in $(find . -path ./x-\*/Folio.app/Contents/MacOS/folio -o -name folio.exe -o -type f -name folio -perm -u+x); do
+            chmod +x "$exe" 2>/dev/null || true
+            echo "$exe: $("$exe" --version)"
+          done
+          rm -rf x-* folio-*-linux-x64/ folio-lite-*-linux-x64/
+
       - uses: actions/upload-artifact@v4
         with:
           name: folio-${{ runner.os }}

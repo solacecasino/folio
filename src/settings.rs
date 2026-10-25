@@ -99,6 +99,8 @@ pub struct PanelSpec {
     /// For `adapter` panels: the adapter's name and panel id.
     #[serde(alias = "component")]
     pub adapter: Option<String>,
+    /// For `plugin` panels: the plugin's name (and `id`).
+    pub plugin: Option<String>,
     pub id: Option<String>,
 }
 
@@ -114,6 +116,8 @@ pub enum PanelKind {
     /// A panel filled by an adapter ("component" is the older name).
     #[serde(alias = "component")]
     Adapter,
+    /// A panel filled by a WebAssembly plugin.
+    Plugin,
     Versions,
 }
 
@@ -195,6 +199,7 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
                 PanelKind::Outline => "outline",
                 PanelKind::Text => "text",
                 PanelKind::Adapter => "adapter",
+                PanelKind::Plugin => "plugin",
                 PanelKind::Versions => "versions",
             };
             t["kind"] = toml_edit::value(kind);
@@ -209,6 +214,9 @@ pub fn save_panels(panels: &[PanelSpec]) -> Result<(), String> {
             }
             if let Some(c) = &p.adapter {
                 t["adapter"] = toml_edit::value(c.as_str());
+            }
+            if let Some(c) = &p.plugin {
+                t["plugin"] = toml_edit::value(c.as_str());
             }
             if let Some(id) = &p.id {
                 t["id"] = toml_edit::value(id.as_str());

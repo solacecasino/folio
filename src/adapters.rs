@@ -24,7 +24,7 @@ use serde::Deserialize;
 use crate::doc::Pos;
 use serde_json::{Value, json};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 pub const READ: &str = "document.read";
 pub const EDIT: &str = "document.edit";
@@ -56,6 +56,10 @@ pub struct Manifest {
     /// Panels this adapter can fill; users place them in settings.toml.
     #[serde(default)]
     pub panels: Vec<PanelDecl>,
+    /// `folio://` links this adapter opens: link kind → command id. The
+    /// command gets the whole link as its `argument`.
+    #[serde(default)]
+    pub links: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -263,6 +267,14 @@ impl Host {
         let generation = c.generation;
         let stdout = child.stdout.take().expect("stdout is piped");
         let stdin = child.stdin.take().expect("stdin is piped");
+        if let Some(stderr) = child.stderr.take() {
+            let name = c.manifest.name.clone();
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    crate::log::push(&name, crate::log::Level::Warn, line);
+                }
+            });
+        }
         let (tx, waker) = (self.tx.clone(), self.waker.clone());
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
@@ -307,13 +319,28 @@ impl Host {
 
     /// Runs an adapter's command by name and id, starting it if needed.
     pub fn run_command(&mut self, name: &str, id: &str) -> Result<(), String> {
+        self.run_command_with(name, id, None)
+    }
+
+    /// Runs a command with an argument, such as the link that was opened.
+    pub fn run_command_with(&mut self, name: &str, id: &str, argument: Option<&str>) -> Result<(), String> {
         let i = self
             .index_of(name)
             .ok_or_else(|| format!("no adapter named \"{name}\" is installed"))?;
         self.all[i].blocked = false;
         self.start(i)?;
-        self.send(i, json!({ "method": "command", "params": { "command": id } }));
+        let mut params = json!({ "command": id });
+        if let Some(a) = argument {
+            params["argument"] = json!(a);
+        }
+        self.send(i, json!({ "method": "command", "params": params }));
         Ok(())
+    }
+
+    /// The adapter and command that open `folio://<kind>` links.
+    pub fn link_handler(&self, kind: &str) -> Option<(String, String)> {
+        self.installed()
+            .find_map(|(_, a)| a.manifest.links.get(kind).map(|cmd| (a.manifest.name.clone(), cmd.clone())))
     }
 
     /// Sends an event to every running adapter that asked for it.
@@ -442,10 +469,10 @@ impl Host {
                                 self.reply(i, id, Ok(Value::Null));
                             }
                         }
-                        "log" => eprintln!(
-                            "[{}] {}",
-                            self.all[i].manifest.name,
-                            params.get("message").and_then(Value::as_str).unwrap_or_default()
+                        "log" => crate::log::push(
+                            &self.all[i].manifest.name,
+                            crate::log::Level::Info,
+                            params.get("message").and_then(Value::as_str).unwrap_or_default(),
                         ),
                         _ => calls.push(Call {
                             adapter: i,
@@ -542,7 +569,8 @@ fn spawn(dir: &Path, run: &[String]) -> Result<Child, String> {
             .env("PYTHONIOENCODING", "utf-8")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            // Shown in View → Log.
+            .stderr(Stdio::piped());
         crate::platform::hide_console(&mut command);
         match command.spawn() {
             Ok(child) => return Ok(child),
@@ -613,11 +641,17 @@ pub struct Staged {
     /// The folder holding `adapter.toml`.
     pub dir: PathBuf,
     pub manifest: Manifest,
+    _unpacked: Unpacked,
+}
+
+/// A downloaded adapter or plugin, unpacked if it was a zip.
+pub struct Unpacked {
+    pub root: PathBuf,
     /// A temporary folder to delete afterwards (for zips).
     temp: Option<PathBuf>,
 }
 
-impl Drop for Staged {
+impl Drop for Unpacked {
     fn drop(&mut self) {
         if let Some(t) = &self.temp {
             let _ = std::fs::remove_dir_all(t);
@@ -625,53 +659,70 @@ impl Drop for Staged {
     }
 }
 
+/// Unpacks a `.zip` into a temporary folder; a folder is used as it is.
+pub fn unpack(source: &Path) -> Result<Unpacked, String> {
+    if source.is_dir() {
+        return Ok(Unpacked {
+            root: source.to_path_buf(),
+            temp: None,
+        });
+    }
+    if !source.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+        return Err("Choose an adapter's or plugin's .zip file, or its folder".into());
+    }
+    let temp = std::env::temp_dir().join(format!("folio-install-{}", crate::safety::new_doc_id()));
+    let unpacked = std::fs::File::open(source)
+        .map_err(|e| e.to_string())
+        .and_then(|f| zip::ZipArchive::new(f).map_err(|e| e.to_string()))
+        // Keeps file permissions, like a program's executable bit.
+        .and_then(|mut zip| zip.extract(&temp).map_err(|e| e.to_string()));
+    if let Err(e) = unpacked {
+        let _ = std::fs::remove_dir_all(&temp);
+        return Err(format!("That zip couldn't be unpacked: {e}"));
+    }
+    Ok(Unpacked {
+        root: temp.clone(),
+        temp: Some(temp),
+    })
+}
+
+/// The folder holding one of `files`: `root` itself or one folder down
+/// (how zips usually come). None if there's none; an error if several.
+pub fn find_manifest(root: &Path, files: &[&str]) -> Result<Option<PathBuf>, String> {
+    let has = |d: &Path| files.iter().any(|f| d.join(f).is_file());
+    if has(root) {
+        return Ok(Some(root.to_path_buf()));
+    }
+    let inner: Vec<PathBuf> = std::fs::read_dir(root)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && has(p))
+        .collect();
+    match inner.as_slice() {
+        [] => Ok(None),
+        [one] => Ok(Some(one.clone())),
+        _ => Err("This holds more than one add-on; add them one at a time".into()),
+    }
+}
+
 /// Unpacks a downloaded adapter (`.zip` or folder) and reads its manifest,
 /// without installing anything yet.
+#[cfg(test)]
 pub fn stage(source: &Path) -> Result<Staged, String> {
-    let (root, temp) = if source.is_dir() {
-        (source.to_path_buf(), None)
-    } else if source.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
-        let temp = std::env::temp_dir().join(format!("folio-install-{}", crate::safety::new_doc_id()));
-        let unpacked = std::fs::File::open(source)
-            .map_err(|e| e.to_string())
-            .and_then(|f| zip::ZipArchive::new(f).map_err(|e| e.to_string()))
-            // Keeps file permissions, like a program's executable bit.
-            .and_then(|mut zip| zip.extract(&temp).map_err(|e| e.to_string()));
-        if let Err(e) = unpacked {
-            let _ = std::fs::remove_dir_all(&temp);
-            return Err(format!("That zip couldn't be unpacked: {e}"));
-        }
-        (temp.clone(), Some(temp))
-    } else {
-        return Err("Choose an adapter's .zip file or its folder".into());
-    };
-    let mut staged = Staged {
-        dir: root.clone(),
-        manifest: Manifest::placeholder(),
-        temp,
-    };
+    stage_unpacked(unpack(source)?)
+}
 
-    // The manifest is at the top, or one folder down (how zips usually come).
-    let has_manifest = |d: &Path| d.join("adapter.toml").exists() || d.join("component.toml").exists();
-    let dir = if has_manifest(&root) {
-        root
-    } else {
-        let inner: Vec<PathBuf> = std::fs::read_dir(&root)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_dir() && has_manifest(p))
-            .collect();
-        match inner.as_slice() {
-            [one] => one.clone(),
-            [] => return Err("This isn't a Folio adapter: there's no adapter.toml in it".into()),
-            _ => return Err("This holds more than one adapter; add them one at a time".into()),
-        }
-    };
-    staged.manifest = load_manifest(&dir).map_err(|e| format!("Its adapter.toml has a problem: {e}"))?;
-    check_platform(&dir, &staged.manifest)?;
-    staged.dir = dir;
-    Ok(staged)
+pub fn stage_unpacked(unpacked: Unpacked) -> Result<Staged, String> {
+    let dir = find_manifest(&unpacked.root, &["adapter.toml", "component.toml"])?
+        .ok_or("This isn't a Folio adapter or plugin: there's no adapter.toml or plugin.toml in it")?;
+    let manifest = load_manifest(&dir).map_err(|e| format!("Its adapter.toml has a problem: {e}"))?;
+    check_platform(&dir, &manifest)?;
+    Ok(Staged {
+        dir,
+        manifest,
+        _unpacked: unpacked,
+    })
 }
 
 /// This computer, as release zips name it.
@@ -798,24 +849,6 @@ pub fn uninstall(adapter: &Adapter) -> Result<(), String> {
     Ok(())
 }
 
-impl Manifest {
-    fn placeholder() -> Self {
-        Self {
-            name: String::new(),
-            version: String::new(),
-            author: String::new(),
-            license: String::new(),
-            description: String::new(),
-            homepage: String::new(),
-            run: Vec::new(),
-            permissions: Vec::new(),
-            start: Start::Command,
-            events: Vec::new(),
-            commands: Vec::new(),
-            panels: Vec::new(),
-        }
-    }
-}
 
 // ---- Approval ---------------------------------------------------------------
 //
@@ -1079,6 +1112,7 @@ for line in sys.stdin:
             license: String::new(),
             description: String::new(),
             homepage: String::new(),
+            links: BTreeMap::new(),
             run: vec!["python3".into(), "fake.py".into()],
             permissions: vec![READ.into()],
             start: Start::Command,
@@ -1178,6 +1212,33 @@ for line in sys.stdin:
         let names: Vec<&str> = found.iter().map(|a| a.manifest.name.as_str()).collect();
         assert_eq!(names, ["Legacy", "Modern"]);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn plugin_zips_are_told_apart_and_links_find_their_adapter() {
+        let downloads = temp("plugin-zip");
+        let plugin = downloads.join("word-goals");
+        std::fs::create_dir_all(&plugin).unwrap();
+        std::fs::write(plugin.join("plugin.toml"), "name = \"Word Goals\"\nversion = \"1\"").unwrap();
+        std::fs::write(plugin.join("plugin.wasm"), b"").unwrap();
+        let zip = downloads.join("word-goals-1.zip");
+        zip_folder(&plugin, &zip);
+        let unpacked = unpack(&zip).unwrap();
+        let found = find_manifest(&unpacked.root, &["plugin.toml"]).unwrap().unwrap();
+        assert!(found.ends_with("word-goals"));
+        assert!(find_manifest(&unpacked.root, &["adapter.toml"]).unwrap().is_none());
+        let staged = stage_unpacked(unpacked).err().unwrap();
+        assert!(staged.contains("adapter or plugin"), "{staged}");
+
+        let root = temp("links");
+        write_adapter(&root.join("link"), "Folio Link", ROUND_TRIP, "links = { join = \"join\" }");
+        let host = Host::new(discover_in(std::slice::from_ref(&root)), Arc::new(|| {}), Box::new(|_| true));
+        assert_eq!(host.link_handler("join"), Some(("Folio Link".into(), "join".into())));
+        assert_eq!(host.link_handler("open"), None);
+        drop(host);
+        for d in [downloads, root] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]

@@ -54,7 +54,7 @@ pub mod manifest;
 mod runtime;
 pub mod sandbox;
 
-pub use document::{DocumentSnapshot, Edit, Event, LogLevel, PluginOutput, Position, Selection};
+pub use document::{DocumentSnapshot, Edit, Event, LogLevel, PanelLine, PluginOutput, Position, Selection};
 pub use error::PluginError;
 pub use manager::{PluginInfo, default_plugins_dir};
 pub use manifest::{Capabilities, Manifest};

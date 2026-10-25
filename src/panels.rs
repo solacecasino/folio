@@ -29,6 +29,7 @@ pub struct Context<'a> {
     pub text_lines: &'a [Vec<Format>],
     pub fields: &'a dyn Fn(&str) -> Option<String>,
     pub host: &'a Host,
+    pub plugins: &'a crate::plugins::Plugins,
     /// This document's saved versions, newest first.
     pub versions: &'a [crate::safety::Version],
 }
@@ -67,6 +68,7 @@ pub fn show(ui: &mut Ui, specs: &[PanelSpec], cx: &Context<'_>) -> Vec<Action> {
                             }
                         }
                         PanelKind::Adapter => adapter(ui, spec, cx, &mut actions),
+                        PanelKind::Plugin => plugin(ui, spec, cx, &mut actions),
                         PanelKind::Versions => versions(ui, cx, &mut actions),
                     });
             });
@@ -86,6 +88,12 @@ fn header(ui: &mut Ui, i: usize, spec: &PanelSpec, cx: &Context<'_>, actions: &m
         PanelKind::Outline => "Outline".into(),
         PanelKind::Text => String::new(),
         PanelKind::Adapter => adapter_panel_title(spec, cx).unwrap_or_else(|| "Adapter".into()),
+        PanelKind::Plugin => spec
+            .plugin
+            .as_deref()
+            .zip(spec.id.as_deref())
+            .and_then(|(p, id)| cx.plugins.panel_title(p, id))
+            .unwrap_or_else(|| "Plugin".into()),
         PanelKind::Versions => "Versions".into(),
     });
     let label = ui.add(
@@ -135,6 +143,38 @@ fn adapter_panel_title(spec: &PanelSpec, cx: &Context<'_>) -> Option<String> {
     let c = &cx.host.all[cx.host.index_of(spec.adapter.as_deref()?)?];
     let id = spec.id.as_deref()?;
     c.manifest.panels.iter().find(|p| p.id == id).map(|p| p.title.clone())
+}
+
+fn plugin(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<Action>) {
+    let (Some(name), Some(id)) = (spec.plugin.as_deref(), spec.id.as_deref()) else {
+        ui.label(RichText::new("Set `plugin` and `id` for this panel in settings.toml").weak());
+        return;
+    };
+    if !cx.plugins.is_loaded(name) {
+        let why = if cfg!(feature = "wasi-plugins") {
+            format!("“{name}” isn't installed")
+        } else {
+            "Folio Lite doesn't run plugins".to_owned()
+        };
+        ui.label(RichText::new(why).weak());
+        return;
+    }
+    let Some(lines) = cx.plugins.panel(name, id) else {
+        ui.label(RichText::new("Waiting for the plugin…").weak());
+        return;
+    };
+    for line in lines {
+        match &line.command {
+            Some(cmd) => {
+                if ui.link(&line.text).clicked() {
+                    actions.push(Action::Run(Command::Plugin(name.to_owned(), cmd.clone())));
+                }
+            }
+            None => {
+                ui.label(&line.text);
+            }
+        }
+    }
 }
 
 fn adapter(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<Action>) {

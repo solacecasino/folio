@@ -345,3 +345,96 @@ fn bad_plugins_are_reported_and_skipped() {
     assert_eq!(rt.ask("Good", "count"), "count 1");
     rt.rt.shutdown();
 }
+
+#[test]
+fn plugins_replace_text_and_fill_the_status_line_and_panels() {
+    let f = Fixture::new("v2");
+    f.install(
+        "Probe",
+        "[[panels]]\nid = \"goal\"\ntitle = \"Word Goal\"\n[capabilities]\ndocument = [\"read\", \"edit\"]",
+    );
+    f.install("Reader", "[capabilities]\ndocument = [\"read\"]");
+    let mut rt = f.start(Limits::default());
+    rt.loaded(&["Probe", "Reader"]);
+    let info = rt.rt.plugins().iter().find(|p| p.name == "Probe").unwrap().clone();
+    assert_eq!(info.panels[0].title, "Word Goal");
+    rt.rt.set_document(essay());
+
+    assert_eq!(rt.ask("Probe", "replace"), "replaced");
+    let PluginOutput::Edit { revision, edit, .. } = rt.wait_for("the replacement", |o| matches!(o, PluginOutput::Edit { .. })) else {
+        unreachable!()
+    };
+    assert_eq!(revision, 7);
+    assert_eq!(
+        edit,
+        Edit::ReplaceRange {
+            start: Position { paragraph: 0, character: 0 },
+            end: Position { paragraph: 0, character: 5 },
+            text: "Howdy".into(),
+        },
+        "a backwards range is put in order"
+    );
+    assert_eq!(rt.ask("Reader", "replace"), "replace denied: missing-capability");
+
+    assert_eq!(rt.ask("Probe", "status:250 to go"), "status set");
+    let status = rt.wait_for("the status", |o| matches!(o, PluginOutput::Status { .. }));
+    assert!(matches!(status, PluginOutput::Status { text: Some(t), .. } if t == "250 to go"));
+    assert_eq!(rt.ask("Probe", "status"), "status set");
+    let status = rt.wait_for("the status to clear", |o| matches!(o, PluginOutput::Status { .. }));
+    assert!(matches!(status, PluginOutput::Status { text: None, .. }));
+
+    assert_eq!(rt.ask("Probe", "panel:goal"), "panel set");
+    let PluginOutput::Panel { id, lines, .. } = rt.wait_for("the panel", |o| matches!(o, PluginOutput::Panel { .. })) else {
+        unreachable!()
+    };
+    assert_eq!(id, "goal");
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[1].command.as_deref(), Some("count"));
+
+    assert_eq!(rt.ask("Probe", "panel:secret"), "panel set");
+    rt.wait_for("a warning about the undeclared panel", |o| {
+        matches!(o, PluginOutput::Log { message, .. } if message.contains("isn't one of the [[panels]]"))
+    });
+    assert!(
+        !rt.seen.iter().any(|o| matches!(o, PluginOutput::Panel { id, .. } if id == "secret")),
+        "only declared panels"
+    );
+}
+
+/// Runs a plugin folder (plugin.toml + its .wasm), such as one built from
+/// folio-plugin-template: its `shout` command and the word count.
+/// `FOLIO_PLUGIN_DIR=path/to/folder cargo test -p folio_plugin template_plugin -- --ignored`
+#[test]
+#[ignore]
+fn template_plugin() {
+    let source = PathBuf::from(std::env::var("FOLIO_PLUGIN_DIR").unwrap());
+    let f = Fixture::new("template");
+    let dest = f.dir.join("plugins/template");
+    std::fs::create_dir_all(&dest).unwrap();
+    for entry in std::fs::read_dir(&source).unwrap().flatten() {
+        std::fs::copy(entry.path(), dest.join(entry.file_name())).unwrap();
+    }
+    let mut rt = f.start(Limits::default());
+    let PluginOutput::Loaded(info) = rt.wait_for("the plugin to load", |o| matches!(o, PluginOutput::Loaded(_))) else {
+        unreachable!()
+    };
+    rt.rt.set_document(essay());
+    rt.rt.run_command(&info.name, "shout");
+    let PluginOutput::Edit { edit, .. } = rt.wait_for("the edit", |o| matches!(o, PluginOutput::Edit { .. })) else {
+        unreachable!()
+    };
+    assert_eq!(
+        edit,
+        Edit::ReplaceRange {
+            start: Position { paragraph: 1, character: 4 },
+            end: Position { paragraph: 1, character: 9 },
+            text: "WORLD".into(),
+        }
+    );
+    rt.rt.dispatch(Event::Changed);
+    let status = rt.wait_for("the word count", |o| matches!(o, PluginOutput::Status { .. }));
+    assert!(matches!(&status, PluginOutput::Status { text: Some(t), .. } if t == "3 words"), "{status:?}");
+    rt.rt.set_document(DocumentSnapshot { selection: None, ..essay() });
+    rt.rt.run_command(&info.name, "shout");
+    assert_eq!(rt.notice(&info.name), "Select some text first");
+}

@@ -20,6 +20,14 @@ long-lived peer-to-peer connection (Folio Link), or other system integration.
 
 ## Plugins
 
+> **Plugins are a preview in Folio 1.0.** They work and are sandboxed, but
+> the interface may still grow and change before it's declared stable.
+
+**Install** a plugin by dropping its `.zip` (or folder) on Folio's window.
+Folio shows what it can do first. **Make one** from
+[folio-plugin-template](https://github.com/solacecasino/folio-plugin-template):
+a working Rust plugin and a workflow that releases it on each version tag.
+
 ```text
 plugins/word-goals/
 ├── plugin.toml
@@ -48,6 +56,12 @@ network = ["api.example.com:443"]                      # or "any"
 
 Plugin commands appear in a **Plugins** menu and can be bound in
 `keys.toml`: `"cmd+alt+g" = 'plugin "Word Goals" set-goal'`.
+
+Plugins can read the selection and document facts, insert text or replace
+a range, show text in the status line (`%plugin_status%`), fill panels they
+declare with `[[panels]]` (placed with `kind = "plugin"` in settings.toml),
+show messages, and log. **View → Log** shows their log lines and errors.
+Folio → Reload Config reloads plugins too.
 
 What a plugin can call, and the events it gets, are in the
 [WIT interface](../crates/folio_plugin/wit/folio-plugin.wit). Edits a plugin

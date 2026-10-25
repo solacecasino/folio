@@ -85,7 +85,7 @@ def main():
         stage.mkdir()
         shutil.copy2(ROOT / "target/release/folio", stage)
         shutil.copytree(ROOT / "themes", stage / "themes")
-        for f in ["install.sh", "folio.desktop"]:
+        for f in ["install.sh", "folio.desktop", "folio-mime.xml"]:
             shutil.copy2(ROOT / "packaging/linux" / f, stage)
         shutil.copy2(ROOT / "assets/icon-256.png", stage / "folio.png")
         shutil.copy2(ROOT / "LICENSE", stage)
