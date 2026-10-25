@@ -96,6 +96,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: folio-*   # the downloads, not the screenshots
           merge-multiple: true
       - name: Publish
         env:
