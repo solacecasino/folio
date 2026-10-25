@@ -1179,7 +1179,7 @@ for line in sys.stdin:
         let found = discover_in(std::slice::from_ref(&root));
         let mut names: Vec<&str> = found.iter().map(|a| a.manifest.name.as_str()).collect();
         names.sort();
-        assert_eq!(names, ["Folio Link", "PDF Export", "Writing Tools"]);
+        assert_eq!(names, ["Folio Link", "PDF Export", "Rich Content", "Writing Tools"]);
 
         let mut host = Host::new(found, Arc::new(|| {}), Box::new(|_| true));
         let pdf = host.index_of("PDF Export").unwrap();
