@@ -53,7 +53,8 @@ impl State {
 
     /// Puts a document at the top of Open Recent.
     pub fn add_recent(&mut self, doc: &Path) {
-        let doc = doc.canonicalize().unwrap_or_else(|_| doc.to_path_buf());
+        // Absolute, but not canonicalized: on Windows that gives \\?\ paths.
+        let doc = std::path::absolute(doc).unwrap_or_else(|_| doc.to_path_buf());
         self.recent.retain(|p| p != &doc);
         self.recent.insert(0, doc);
         self.recent.truncate(RECENT);
@@ -67,11 +68,13 @@ mod tests {
     #[test]
     fn recent_documents_are_newest_first_without_duplicates() {
         let mut s = State::default();
-        for p in ["/a", "/b", "/a", "/c"] {
-            s.add_recent(Path::new(p));
+        let doc = |name: &str| std::env::temp_dir().join(name);
+        for p in ["a", "b", "a", "c"] {
+            s.add_recent(&doc(p));
         }
-        let names: Vec<&str> = s.recent.iter().map(|p| p.to_str().unwrap()).collect();
-        assert_eq!(names, ["/c", "/a", "/b"]);
+        let names: Vec<&str> = s.recent.iter().map(|p| p.file_name().unwrap().to_str().unwrap()).collect();
+        assert_eq!(names, ["c", "a", "b"]);
+        assert!(!s.recent[0].to_string_lossy().starts_with(r"\\?\"), "plain paths, not verbatim ones");
         for i in 0..20 {
             s.add_recent(Path::new(&format!("/doc{i}")));
         }
