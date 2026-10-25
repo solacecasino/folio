@@ -385,7 +385,14 @@ mod drawn {
             ui.painter().rect_filled(rect, 0.0, bg);
             let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(6.0, 0.0))));
             bar.visuals_mut().override_text_color = Some(fg);
-            bar.visuals_mut().widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+            // Hovered and open menu titles get a faint tint of the text color,
+            // so the (light) title stays readable on any theme.
+            let w = &mut bar.visuals_mut().widgets;
+            w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+            for state in [&mut w.hovered, &mut w.active, &mut w.open] {
+                state.weak_bg_fill = fg.gamma_multiply(0.18);
+                state.bg_fill = fg.gamma_multiply(0.18);
+            }
 
             egui::MenuBar::new().ui(&mut bar, |ui| {
                 for (title, entries) in &self.menus {

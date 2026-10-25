@@ -180,6 +180,35 @@ pub fn dialog_problem() -> Option<String> {
     })
 }
 
+/// On Linux under X11, the windowing library needs libxkbcommon-x11 and
+/// crashes with a cryptic message without it. Checked before the window
+/// opens so Folio can say what to install instead.
+pub fn missing_system_library() -> Option<String> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty());
+        if !wayland && std::env::var_os("DISPLAY").is_some() {
+            // SAFETY: dlopen with a valid C string; the handle is closed again.
+            let found = unsafe {
+                let handle = libc::dlopen(c"libxkbcommon-x11.so.0".as_ptr(), libc::RTLD_LAZY);
+                if !handle.is_null() {
+                    libc::dlclose(handle);
+                }
+                !handle.is_null()
+            };
+            if !found {
+                return Some(
+                    "Folio needs the libxkbcommon-x11 library to open its window. Install it: \
+                     sudo apt install libxkbcommon-x11-0 (Debian, Ubuntu), \
+                     sudo dnf install libxkbcommon-x11 (Fedora), sudo pacman -S libxkbcommon-x11 (Arch)."
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    None
+}
+
 /// Where the system keeps fonts, for themes that name a font file without a
 /// folder (`"Georgia.ttf"`), so one theme works on every platform.
 pub fn font_dirs() -> Vec<PathBuf> {

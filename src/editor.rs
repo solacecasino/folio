@@ -928,6 +928,24 @@ impl Editor {
                     self.spelling_menu(ui, &response, &layout, offset, theme, speller);
                 }
                 if self.keyboard {
+                    // Hold egui's keyboard focus so Tab and the arrows reach
+                    // the page instead of moving focus between buttons, unless
+                    // something else (a dialog's text field) has it.
+                    let id = response.id;
+                    ui.memory_mut(|m| {
+                        if m.focused().is_none_or(|f| f == id) {
+                            m.request_focus(id);
+                            m.set_focus_lock_filter(
+                                id,
+                                egui::EventFilter {
+                                    tab: true,
+                                    horizontal_arrows: true,
+                                    vertical_arrows: true,
+                                    escape: false,
+                                },
+                            );
+                        }
+                    });
                     self.handle_keys(ui, &layout, theme);
                 }
                 // Edits change the layout, so lay out again before painting.
@@ -1024,8 +1042,13 @@ impl Editor {
     /// Handles editing and movement keys. Returns true if the caret moved.
     fn key(&mut self, key: Key, m: Modifiers, layout: &Layout, theme: &Theme) -> bool {
         let p = self.cursor;
-        let word = m.alt;
-        let line = m.command;
+        // Each platform's conventions: on macOS Option works by word and Cmd
+        // by line (Cmd+Up/Down: the whole document); on Windows and Linux
+        // Ctrl works by word, and Ctrl+Home/End go to the document's ends.
+        let mac = cfg!(target_os = "macos");
+        let word = if mac { m.alt } else { m.ctrl || m.command };
+        let line = mac && m.command;
+        let document_ends = !mac && word;
         let mut target = None;
         let mut keep_goal = false;
         self.prefer_next_row = true;
@@ -1100,6 +1123,8 @@ impl Editor {
                     t
                 });
             }
+            Key::Home if document_ends => target = Some(Pos::default()),
+            Key::End if document_ends => target = Some(self.doc.end()),
             Key::Home => target = Some(self.row_edge(layout, false)),
             Key::End => {
                 self.prefer_next_row = false;

@@ -1620,6 +1620,12 @@ fn main() -> eframe::Result {
         println!("{} {}", plugins::EDITION, plugins::version());
         return Ok(());
     }
+    if let Some(problem) = platform::missing_system_library() {
+        eprintln!("folio: {problem}");
+        // Started from a menu there's no terminal to read; try a dialog.
+        let _ = std::process::Command::new("zenity").args(["--error", "--title=Folio", "--text", &problem]).status();
+        std::process::exit(1);
+    }
     links::listen_early();
     // A document to open, or a folio:// link (queued until the app is up).
     let path = match std::env::args_os().nth(1) {

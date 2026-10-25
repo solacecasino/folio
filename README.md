@@ -52,7 +52,8 @@ python3 scripts/package.py                      # build this platform's download
 ```
 
 On Linux you also need the usual windowing libraries, e.g. on Debian or
-Ubuntu: `sudo apt install libxkbcommon-dev libgl1-mesa-dev`. Releases are
+Ubuntu: `sudo apt install libxkbcommon-dev libgl1-mesa-dev`. To run Folio,
+desktops need `libxkbcommon-x11-0` (most have it) and `zenity` for dialogs. Releases are
 built on all three platforms by [GitHub Actions](.github/workflows/release.yml)
 when a version tag is pushed.
 

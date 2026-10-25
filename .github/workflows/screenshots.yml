@@ -16,7 +16,7 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev \
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev xvfb xdotool imagemagick hunspell-en-us fonts-dejavu-core zenity
       - name: Build
         run: cargo build --no-default-features
@@ -29,6 +29,7 @@ jobs:
           ./target/debug/folio examples/welcome.folio &
           sleep 10
           shot() { import -window root "shots/$1.png"; }
+          ./target/debug/folio --version
           shot 1-start
           # No window manager: the window sits at the top left, menus in its top strip.
           xdotool mousemove 50 14 click 1; sleep 1; shot 2-menu
@@ -74,7 +75,7 @@ jobs:
           $wshell = New-Object -ComObject wscript.shell
           $null = $wshell.AppActivate($p.Id)
           Start-Sleep 1
-          [System.Windows.Forms.SendKeys]::SendWait("^{END}{ENTER}Typed on Windowss{ENTER}{TAB}after a tab")
+          [System.Windows.Forms.SendKeys]::SendWait("^{END}{ENTER}Typed on Windowss{ENTER}{TAB}after a tab and spaces")
           Start-Sleep 1
           Shot "2-typing"
           [System.Windows.Forms.SendKeys]::SendWait("^%l")

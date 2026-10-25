@@ -33,4 +33,9 @@ if command -v xdg-mime >/dev/null; then
 fi
 
 echo "Installed Folio to $PREFIX/bin/folio. Find it in your app menu, or run: folio"
+# Libraries Folio needs that minimal systems sometimes lack.
+if command -v ldconfig >/dev/null && ! ldconfig -p | grep -q libxkbcommon-x11.so; then
+  echo "Folio also needs libxkbcommon-x11: sudo apt install libxkbcommon-x11-0 (Debian/Ubuntu), sudo dnf install libxkbcommon-x11 (Fedora)."
+fi
+command -v zenity >/dev/null || echo "For Folio's questions and dialogs, install zenity: sudo apt install zenity (or your system's equivalent)."
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) echo "(Add $PREFIX/bin to your PATH to run it from a terminal.)" ;; esac
