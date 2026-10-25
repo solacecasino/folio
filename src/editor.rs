@@ -967,12 +967,16 @@ impl Editor {
         };
         let (p, prefer) = self.pos_at(layout, pointer - offset);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        // Only real mouse clicks: with the page holding keyboard focus, egui
+        // also reports Space and Enter as "clicks", which would move the caret
+        // to wherever the pointer happens to be.
+        let clicked = response.clicked_by(egui::PointerButton::Primary);
         // Cmd/Ctrl-click opens a link; a plain click edits it.
         let link = self.doc.link_at(p).filter(|(a, b, _)| (p > *a && p < *b) || p == *a);
         if command && link.is_some() && response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        if command && response.clicked() && let Some((_, _, link)) = link {
+        if command && clicked && let Some((_, _, link)) = link {
             self.open_link = Some(link.url());
             return;
         }
@@ -983,7 +987,7 @@ impl Editor {
                 self.anchor = Pos::new(p.para, 0);
             }
             self.pending = None;
-        } else if response.drag_started() || (response.clicked() && !response.dragged()) {
+        } else if response.drag_started() || (clicked && !response.dragged()) {
             self.prefer_next_row = prefer;
             self.set_cursor(p, shift);
             self.goal_x = None;

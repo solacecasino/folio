@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev xvfb xdotool imagemagick hunspell-en-us fonts-dejavu-core zenity
+            libxcb-xfixes0-dev xvfb xdotool imagemagick hunspell-en-us fonts-dejavu-core zenity openbox
       - name: Build
         run: cargo build --no-default-features
       - name: Run and take screenshots
@@ -26,21 +26,28 @@ jobs:
           export FOLIO_CONFIG_DIR=$PWD/cfg DISPLAY=:99
           Xvfb :99 -screen 0 1280x1000x24 &
           sleep 2
+          # A window manager, so Folio's window gets keyboard focus.
+          openbox &
+          sleep 1
+          ./target/debug/folio --version
           ./target/debug/folio examples/welcome.folio &
           sleep 10
+          W=$(xdotool search --sync --class folio | head -1)
+          xdotool windowactivate --sync "$W"
           shot() { import -window root "shots/$1.png"; }
-          ./target/debug/folio --version
           shot 1-start
-          # No window manager: the window sits at the top left, menus in its top strip.
-          xdotool mousemove 50 14 click 1; sleep 1; shot 2-menu
+          # Positions relative to Folio's window: the menus are in its top strip.
+          xdotool mousemove --window "$W" 70 14 click 1; sleep 1; shot 2-menu
           xdotool key Escape; sleep 0.5
-          xdotool mousemove 500 600 click 1; sleep 0.5
-          xdotool key ctrl+End Return
-          xdotool type --delay 30 "Typed on Linnux"
+          xdotool mousemove --window "$W" 500 500 click 1; sleep 0.5
+          xdotool key ctrl+End; sleep 0.3
+          xdotool key Return
+          xdotool type --delay 40 "Typed on Linnux, then a tab:"
           xdotool key Return Tab
-          xdotool type --delay 30 "after a tab"
+          xdotool type --delay 40 "after a tab and spaces"
           sleep 1; shot 3-typing
-          xdotool key ctrl+alt+l; sleep 1; shot 4-log
+          xdotool key ctrl+Home; sleep 0.5; shot 4-ctrl-home
+          xdotool key ctrl+alt+l; sleep 1; shot 5-log
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots-linux
@@ -75,12 +82,18 @@ jobs:
           $wshell = New-Object -ComObject wscript.shell
           $null = $wshell.AppActivate($p.Id)
           Start-Sleep 1
-          [System.Windows.Forms.SendKeys]::SendWait("^{END}{ENTER}Typed on Windowss{ENTER}{TAB}after a tab and spaces")
+          [System.Windows.Forms.SendKeys]::SendWait("^{END}")
           Start-Sleep 1
-          Shot "2-typing"
+          Shot "2-ctrl-end"
+          [System.Windows.Forms.SendKeys]::SendWait("{ENTER}Typed on Windowss, then a tab:{ENTER}{TAB}after a tab and spaces")
+          Start-Sleep 1
+          Shot "3-typing"
+          [System.Windows.Forms.SendKeys]::SendWait("^{HOME}")
+          Start-Sleep 1
+          Shot "4-ctrl-home"
           [System.Windows.Forms.SendKeys]::SendWait("^%l")
           Start-Sleep 1
-          Shot "3-log"
+          Shot "5-log"
           Stop-Process -Id $p.Id
       - uses: actions/upload-artifact@v4
         if: always()
