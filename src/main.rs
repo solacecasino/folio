@@ -106,6 +106,8 @@ struct Folio {
     state: state::State,
     /// The window's latest placement and when it last changed, until saved.
     window_moved: Option<(state::WindowRect, f64)>,
+    /// The first-launch check that the window fits the screen has run.
+    window_fitted: bool,
     /// WebAssembly plugins (nothing in folio-lite).
     plugins: plugins::Plugins,
     /// The last plugin edit applied: (revision it was made against, the
@@ -175,6 +177,7 @@ impl Folio {
             plugin_edit: None,
             state,
             window_moved: None,
+            window_fitted: false,
             notice: None,
             sent_revision: (0, 0.0),
             appearance_for: None,
@@ -352,8 +355,30 @@ impl Folio {
         self.rebuild_keys();
     }
 
-    /// Saves the window's size and place once it has stopped changing.
+    /// Saves the window's size and place once it has stopped changing. On
+    /// a first launch it also makes sure the window fits the screen, since
+    /// the default size is taller than small laptop screens.
     fn track_window(&mut self, ctx: &egui::Context, now: f64) {
+        if !self.window_fitted {
+            let fit = ctx.input(|i| {
+                let v = i.viewport();
+                Some((v.monitor_size?, v.outer_rect?, v.inner_rect?))
+            });
+            if let Some((monitor, outer, inner)) = fit {
+                self.window_fitted = true;
+                // Room for the title bar, dock or taskbar.
+                let chrome = outer.height() - inner.height();
+                let max_h = monitor.y * 0.9 - chrome;
+                if self.state.window.is_none() && inner.height() > max_h && max_h > 300.0 {
+                    let size = egui::vec2(inner.width().min(monitor.x * 0.9), max_h);
+                    ctx.send_viewport_cmd(ViewportCommand::InnerSize(size));
+                    ctx.send_viewport_cmd(ViewportCommand::OuterPosition(egui::pos2(
+                        ((monitor.x - size.x) / 2.0).max(0.0),
+                        (monitor.y * 0.04).max(0.0),
+                    )));
+                }
+            }
+        }
         let rect = ctx.input(|i| {
             let v = i.viewport();
             let (outer, inner) = (v.outer_rect?, v.inner_rect?);
