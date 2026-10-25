@@ -8,6 +8,7 @@
 mod adapter_window;
 mod adapters;
 mod clipboard;
+mod dialog;
 mod doc;
 mod editor;
 mod find;
@@ -31,7 +32,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use eframe::egui::{self, Align2, FontId, Sense, SystemTheme, ViewportCommand};
-use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult};
+use rfd::{FileDialog, MessageButtons, MessageDialogResult};
 use serde_json::{Value, json};
 
 use adapters::{Call, Host};
@@ -76,7 +77,7 @@ struct Folio {
     /// Whether the find bar had the keyboard last frame.
     find_focused: bool,
     show_versions: bool,
-    /// View → Log, when open.
+    /// Help → Log, when open.
     log_window: Option<log::Window>,
     /// The last error written to the log, so each is logged once.
     logged_error: Option<String>,
@@ -185,6 +186,10 @@ impl Folio {
         app.load_config(true);
         if let Some(p) = path {
             app.open_path(p);
+        }
+        if let Some(crash) = log::last_crash() {
+            log::push("Folio", log::Level::Error, format!("Folio ran into a bug last time:\n{crash}"));
+            app.error = Some("Folio ran into a bug last time. Help → Report a Problem sends us the details.".into());
         }
         if let Some(problem) = platform::dialog_problem() {
             app.error = Some(problem);
@@ -485,11 +490,7 @@ impl Folio {
     /// Offers back work left behind when Folio didn't quit cleanly.
     fn offer_recovery(&mut self) {
         let Some((file, record)) = safety::orphaned_recoveries().into_iter().next() else { return };
-        let restore = MessageDialog::new()
-            .set_title("Restore unsaved work?")
-            .set_description(record.describe())
-            .set_buttons(MessageButtons::YesNo)
-            .show()
+        let restore = dialog::ask("Restore unsaved work?", &record.describe(), MessageButtons::YesNo)
             == MessageDialogResult::Yes;
         if restore {
             match record.document() {
@@ -517,14 +518,12 @@ impl Folio {
             self.error = Some("Couldn't read that version".into());
             return;
         };
-        let confirm = MessageDialog::new()
-            .set_title("Restore this version?")
-            .set_description(
-                "The document will be replaced with this version. You can undo it, and your current text \
-                 is kept as a version the next time you save.",
-            )
-            .set_buttons(MessageButtons::OkCancel)
-            .show();
+        let confirm = dialog::ask(
+            "Restore this version?",
+            "The document will be replaced with this version. You can undo it, and your current text \
+             is kept as a version the next time you save.",
+            MessageButtons::OkCancel,
+        );
         if confirm == MessageDialogResult::Ok {
             doc.id = self.editor.doc.id.clone();
             doc.theme = self.editor.doc.theme.clone();
@@ -546,11 +545,7 @@ impl Folio {
         if !self.editor.dirty {
             return true;
         }
-        let answer = MessageDialog::new()
-            .set_title("Unsaved changes")
-            .set_description("Save changes to this document first?")
-            .set_buttons(MessageButtons::YesNoCancel)
-            .show();
+        let answer = dialog::ask("Unsaved changes", "Save changes to this document first?", MessageButtons::YesNoCancel);
         match answer {
             MessageDialogResult::Yes => self.save(false),
             MessageDialogResult::No => true,
@@ -666,6 +661,19 @@ impl Folio {
                 self.persist(|| settings::save_value("show_panels", on));
             }
             Builtin::Help => self.show_help = !self.show_help,
+            // The guide is the README; the browser loads it, not Folio.
+            Builtin::Guide => {
+                if let Err(e) = platform::open(GUIDE_URL.as_ref()) {
+                    self.error = Some(format!("Couldn't open the guide ({GUIDE_URL}): {e}"));
+                }
+            }
+            Builtin::ReportProblem => {
+                self.ctx.copy_text(self.debug_info());
+                match platform::open(REPORT_URL.as_ref()) {
+                    Ok(()) => self.notice = Some(("Debug info copied. Paste it into the form".into(), now)),
+                    Err(e) => self.error = Some(format!("Couldn't open {REPORT_URL}: {e}")),
+                }
+            }
             Builtin::Log => {
                 self.log_window = match self.log_window.take() {
                     Some(_) => None,
@@ -874,12 +882,7 @@ impl Folio {
             text += &format!("\n\nThis replaces the copy you have now (it goes to {}).", platform::TRASH);
         }
         text += "\n\nAdapters are separate programs. Only add ones you trust.";
-        let ok = MessageDialog::new()
-            .set_title("Add adapter?")
-            .set_description(text)
-            .set_buttons(MessageButtons::OkCancel)
-            .show()
-            == MessageDialogResult::Ok;
+        let ok = dialog::ask("Add adapter?", &text, MessageButtons::OkCancel) == MessageDialogResult::Ok;
         if !ok {
             return;
         }
@@ -919,12 +922,7 @@ impl Folio {
             }
             text += "\n\nPlugins run in a sandbox: they can't do anything beyond this.";
         }
-        let ok = MessageDialog::new()
-            .set_title("Add plugin?")
-            .set_description(text)
-            .set_buttons(MessageButtons::OkCancel)
-            .show()
-            == MessageDialogResult::Ok;
+        let ok = dialog::ask("Add plugin?", &text, MessageButtons::OkCancel) == MessageDialogResult::Ok;
         if !ok {
             return;
         }
@@ -939,15 +937,8 @@ impl Folio {
 
     fn remove_adapter(&mut self, i: usize, now: f64) {
         let name = self.adapters.all[i].manifest.name.clone();
-        let ok = MessageDialog::new()
-            .set_title("Remove adapter?")
-            .set_description(format!(
-                "Remove “{name}”? It moves to {}, and Folio forgets that you allowed it.",
-                platform::TRASH
-            ))
-            .set_buttons(MessageButtons::OkCancel)
-            .show()
-            == MessageDialogResult::Ok;
+        let text = format!("Remove “{name}”? It moves to {}, and Folio forgets that you allowed it.", platform::TRASH);
+        let ok = dialog::ask("Remove adapter?", &text, MessageButtons::OkCancel) == MessageDialogResult::Ok;
         if !ok {
             return;
         }
@@ -1152,7 +1143,8 @@ impl Folio {
         }
         let problems = log::recent_problems(20);
         out.push(if problems.is_empty() { "Recent problems: none".into() } else { format!("Recent problems:\n{}", problems.join("\n")) });
-        out.join("\n")
+        // Paths show ~ for the home folder: people paste this into public issues.
+        platform::hide_home(&out.join("\n"))
     }
 
     /// Opens a link from the document. Only web and mail links: a shared
@@ -1329,12 +1321,7 @@ impl Folio {
             }
             "ui.confirm" => {
                 let param = |key: &str| call.params.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
-                let yes = MessageDialog::new()
-                    .set_title(param("title"))
-                    .set_description(param("message"))
-                    .set_buttons(MessageButtons::YesNo)
-                    .show()
-                    == MessageDialogResult::Yes;
+                let yes = dialog::ask(&param("title"), &param("message"), MessageButtons::YesNo) == MessageDialogResult::Yes;
                 Ok(json!(yes))
             }
             "ui.save_dialog" => {
@@ -1632,6 +1619,9 @@ fn local_date_time() -> (String, String) {
     (format!("{:04}-{:02}-{:02}", t.year, t.month, t.day), format!("{:02}:{:02}", t.hour, t.minute))
 }
 
+const GUIDE_URL: &str = "https://github.com/solacecasino/folio#readme";
+const REPORT_URL: &str = "https://github.com/solacecasino/folio/issues/new?template=bug.yml";
+
 fn main() -> eframe::Result {
     if std::env::args().nth(1).as_deref() == Some("--version") {
         // Release builds on Windows have no console of their own; print to
@@ -1651,6 +1641,7 @@ fn main() -> eframe::Result {
         let _ = std::process::Command::new("zenity").args(["--error", "--title=Folio", "--text", &problem]).status();
         std::process::exit(1);
     }
+    log::catch_crashes();
     links::listen_early();
     // A document to open, or a folio:// link (queued until the app is up).
     let path = match std::env::args_os().nth(1) {

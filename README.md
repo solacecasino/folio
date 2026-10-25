@@ -11,7 +11,8 @@ files you own, and anything extra comes from add-ons you choose, in the
 spirit of [foobar2000](https://www.foobar2000.org/).
 
 This page is the user guide. Read it once and you'll know everything Folio
-can do; it takes about ten minutes.
+can do; it takes about ten minutes. Folio's **Help → User Guide** opens this
+page.
 
 **Contents:** [Install](#install) · [Your first document](#your-first-document) ·
 [Writing and formatting](#writing-and-formatting) · [Saving, history and recovery](#saving-history-and-recovery) ·
@@ -27,7 +28,7 @@ Download yours from [Releases](../../releases/latest):
 
 | | Download | Then |
 |---|---|---|
-| **macOS** (Apple Silicon) | `Folio-<version>-macos-arm64.zip` | Unzip and drag **Folio.app** into Applications. It isn't signed with an Apple developer certificate yet, so the first time, right-click it and choose **Open**. |
+| **macOS** (Apple Silicon and Intel) | `Folio-<version>-macos-universal.zip` | Unzip and drag **Folio.app** into Applications. It isn't signed with an Apple developer certificate yet, so the first time, right-click it and choose **Open**. |
 | **Windows** (64-bit) | `Folio-<version>-windows-x64.zip` | Unzip anywhere and run **folio.exe** (keep the `themes` folder next to it). If Windows says it protected your PC, click **More info → Run anyway**. |
 | **Linux** (x86-64) | `folio-<version>-linux-x64.tar.gz` | Unpack it and run `./install.sh` to add Folio to your app menu, or just run `./folio`. You need `zenity` for open and save dialogs. |
 
@@ -162,7 +163,7 @@ any language, for connecting outside tools. You install both the same way.
 (Rust). Each comes with a workflow that publishes downloads for every
 platform when you push a version tag, and listing it in the catalog is a
 one-field form. Guides: [docs/adapters.md](docs/adapters.md),
-[docs/plugins.md](docs/plugins.md). **View → Log** (`Cmd+Alt+L`) shows what
+[docs/plugins.md](docs/plugins.md). **Help → Log** (`Cmd+Alt+L`) shows what
 your add-on prints while you build it.
 
 ---
@@ -284,10 +285,13 @@ The full reference is [docs/customizing.md](docs/customizing.md).
 
 ## Help and problems
 
-- **Something wrong?** Choose **View → Log**, click **Copy Debug Info**, and
-  paste it into a [problem report](../../issues/new?template=bug.yml). It
-  says which version and platform you're on and what went wrong recently;
-  it never includes your document.
+- **Something wrong?** Choose **Help → Report a Problem…**. Folio copies its
+  debug info and opens the [problem report](../../issues/new?template=bug.yml)
+  form in your browser; paste it in. The debug info says which version and
+  platform you're on and what went wrong recently. It never includes your
+  document, and your user name is hidden from file paths.
+- **Folio crashed?** It keeps the details, and tells you the next time it
+  opens. Report a Problem then includes them.
 - **An idea?** [Suggest it](../../issues/new?template=idea.yml).
 - **A problem with an add-on?** Report it on that add-on's own page, linked
   from the catalog.

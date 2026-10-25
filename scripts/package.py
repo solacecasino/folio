@@ -2,6 +2,7 @@
 """Builds Folio for this computer and packs the download into dist/.
 
     macOS    dist/Folio-<version>-macos-arm64.zip     Folio.app
+             (UNIVERSAL=1: Folio-<version>-macos-universal.zip, for Intel Macs too)
     Windows  dist/Folio-<version>-windows-x64.zip     folio.exe, themes, README
     Linux    dist/folio-<version>-linux-x64.tar.gz    folio, themes, install.sh
 
@@ -61,7 +62,8 @@ def main():
         env = dict(os.environ, CARGO_FLAGS=" ".join(flags))
         print("+ sh scripts/bundle.sh", " ".join(flags), flush=True)
         subprocess.run(["sh", "scripts/bundle.sh"], cwd=ROOT, check=True, env=env)
-        out = DIST / f"Folio-{edition}{version}-macos-{arch()}.zip"
+        mac = "universal" if os.environ.get("UNIVERSAL") == "1" else arch()
+        out = DIST / f"Folio-{edition}{version}-macos-{mac}.zip"
         # ditto keeps the app bundle and its signature intact.
         run("ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent", "target/Folio.app", out)
 

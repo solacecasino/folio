@@ -91,7 +91,9 @@ menus show your shortcuts. `Cmd+/` lists every current binding.
 | `next-theme` `zoom-in` `zoom-out` `zoom-reset` | View |
 | `toggle-status` `toggle-panels` `help` | Show or hide things |
 | `reload-config` `open-config-folder` | Config |
-| `log` | View → Log: adapters' and plugins' output and errors |
+| `log` | Help → Log: adapters' and plugins' output and errors |
+| `guide` | Help → User Guide: opens the guide in your browser |
+| `report-problem` | Help → Report a Problem…: copies debug info and opens the problem form |
 | `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
 

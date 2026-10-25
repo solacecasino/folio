@@ -144,7 +144,16 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
                 Entry::Separator,
                 b(Builtin::ToggleStatus),
                 b(Builtin::TogglePanels),
+            ],
+        },
+        Section {
+            key: "help",
+            title: "Help",
+            entries: vec![
+                b(Builtin::Guide),
                 b(Builtin::Help),
+                Entry::Separator,
+                b(Builtin::ReportProblem),
                 b(Builtin::Log),
             ],
         },

@@ -114,7 +114,7 @@ title = "Word Goal"
   commands. `start = "launch"` starts it when Folio opens; use it only if the
   adapter needs events from the start.
 - When Folio quits it sends `shutdown`, then stops the program.
-- Whatever the program prints to **stderr** shows in **View → Log**, with
+- Whatever the program prints to **stderr** shows in **Help → Log**, with
   `log` messages and errors, so you can debug without a terminal.
 - `links = { join = "join" }` makes the adapter open `folio://join#...`
   links: clicking one (on any platform) runs that command with the whole

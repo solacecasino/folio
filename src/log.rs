@@ -1,5 +1,5 @@
 //! Folio's log: what adapters and plugins print, their errors, and Folio's
-//! own messages, shown in **View → Log** so people writing adapters and
+//! own messages, shown in **Help → Log** so people writing adapters and
 //! plugins don't need to start Folio from a terminal. Lines are also
 //! written to stderr as before.
 
@@ -143,6 +143,42 @@ impl Window {
         });
         open
     }
+}
+
+fn crash_file() -> std::path::PathBuf {
+    crate::settings::config_dir().join("crash.txt")
+}
+
+/// Writes what went wrong to `crash.txt` in the config folder when Folio
+/// panics, so the next start can show it and Copy Debug Info includes it.
+/// A crash otherwise leaves nothing to report.
+pub fn catch_crashes() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current().name().unwrap_or("unnamed").to_owned();
+        let text = format!(
+            "{} {} on {} {}, thread {thread}: {info}",
+            crate::plugins::EDITION,
+            crate::plugins::version(),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        );
+        let file = crash_file();
+        let _ = std::fs::create_dir_all(file.parent().expect("has parent"));
+        let _ = std::fs::write(file, crate::platform::hide_home(&text));
+        push("Folio", Level::Error, format!("crashed: {info}"));
+        default(info);
+    }));
+}
+
+/// The crash from last time, if Folio crashed, once: the file is removed.
+/// (No backtrace: release builds are stripped, and the message names the
+/// line in Folio's source.)
+pub fn last_crash() -> Option<String> {
+    let file = crash_file();
+    let text = std::fs::read_to_string(&file).ok()?;
+    let _ = std::fs::remove_file(file);
+    Some(text)
 }
 
 #[cfg(test)]

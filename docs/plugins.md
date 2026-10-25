@@ -60,7 +60,7 @@ Plugin commands appear in a **Plugins** menu and can be bound in
 Plugins can read the selection and document facts, insert text or replace
 a range, show text in the status line (`%plugin_status%`), fill panels they
 declare with `[[panels]]` (placed with `kind = "plugin"` in settings.toml),
-show messages, and log. **View → Log** shows their log lines and errors.
+show messages, and log. **Help → Log** shows their log lines and errors.
 Folio → Reload Config reloads plugins too.
 
 What a plugin can call, and the events it gets, are in the

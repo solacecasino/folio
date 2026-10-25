@@ -5,8 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time. The quickest way to fill in the details: in Folio, open
-        **View → Log** (Cmd+Alt+L, or Ctrl+Alt+L) and click **Copy Debug Info**, then paste it below.
+        Thanks for taking the time. The quickest way to fill in the details: in Folio, choose
+        **Help → Report a Problem…**, which copies the debug info, then paste it below.
+        (Or open **Help → Log** and click **Copy Debug Info**.)
   - type: textarea
     id: what
     attributes:
@@ -22,7 +23,7 @@ body:
     id: debug
     attributes:
       label: Debug info
-      description: From View → Log → Copy Debug Info. It has Folio's version, your system, and recent errors; no document contents.
+      description: From Help → Report a Problem… (or Help → Log → Copy Debug Info). It has Folio's version, your system, and recent errors; no document contents.
       render: text
     validations:
       required: true

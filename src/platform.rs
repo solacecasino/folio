@@ -164,20 +164,20 @@ pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Why Folio's questions (save before closing, allow this adapter, ...)
-/// can't be shown, if they can't. On Linux they're shown by `zenity`; with
-/// it missing, every question would quietly come back as "Cancel".
+/// can't be shown, if they can't. On Linux they need zenity, kdialog or
+/// xmessage (see `dialog`); with none, every question would quietly come
+/// back as "Cancel".
 pub fn dialog_problem() -> Option<String> {
-    if cfg!(any(target_os = "macos", windows)) {
-        return None;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if crate::dialog::linux_program().is_none() {
+        return Some(
+            "Folio can't show its questions (like saving before closing) because zenity isn't installed. \
+             Install it: sudo apt install zenity (Debian, Ubuntu), sudo dnf install zenity (Fedora), \
+             sudo pacman -S zenity (Arch)."
+                .to_owned(),
+        );
     }
-    let found = std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("zenity").is_file()));
-    (!found).then(|| {
-        "Folio can't show its questions (like saving before closing) because zenity isn't installed. \
-         Install it: sudo apt install zenity (Debian, Ubuntu), sudo dnf install zenity (Fedora), \
-         sudo pacman -S zenity (Arch)."
-            .to_owned()
-    })
+    None
 }
 
 /// On Linux under X11, the windowing library needs libxkbcommon-x11 and
@@ -239,9 +239,26 @@ pub fn font_dirs() -> Vec<PathBuf> {
     }
 }
 
+/// `text` with the home folder written as `~`, so a pasted path doesn't
+/// give away someone's user name.
+pub fn hide_home(text: &str) -> String {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+    match home.map(|h| h.to_string_lossy().trim_end_matches(['/', '\\']).to_owned()) {
+        Some(home) if home.len() > 1 => text.replace(&home, "~"),
+        _ => text.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_info_hides_the_user_name() {
+        let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap();
+        let text = format!("Config folder: {home}/Library/Folio");
+        assert_eq!(hide_home(&text), "Config folder: ~/Library/Folio");
+    }
 
     #[test]
     fn this_process_is_alive() {
@@ -263,3 +280,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds a release Folio.app in target/ with the icon, name and version.
 # Usage: scripts/bundle.sh            (CARGO_FLAGS="--no-default-features" for folio-lite)
+#        UNIVERSAL=1 scripts/bundle.sh  one app for both Apple Silicon and Intel Macs
 set -e
 cd "$(dirname "$0")/.."
 
@@ -8,7 +9,16 @@ VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 APP=target/Folio.app
 
 # shellcheck disable=SC2086  # CARGO_FLAGS is a list of flags
-cargo build --release $CARGO_FLAGS
+if [ "$UNIVERSAL" = 1 ]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  cargo build --release $CARGO_FLAGS --target aarch64-apple-darwin
+  cargo build --release $CARGO_FLAGS --target x86_64-apple-darwin
+  mkdir -p target/release
+  lipo -create -output target/release/folio \
+    target/aarch64-apple-darwin/release/folio target/x86_64-apple-darwin/release/folio
+else
+  cargo build --release $CARGO_FLAGS
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

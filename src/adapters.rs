@@ -569,7 +569,7 @@ fn spawn(dir: &Path, run: &[String]) -> Result<Child, String> {
             .env("PYTHONIOENCODING", "utf-8")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            // Shown in View → Log.
+            // Shown in Help → Log.
             .stderr(Stdio::piped());
         crate::platform::hide_console(&mut command);
         match command.spawn() {
@@ -906,11 +906,7 @@ pub fn approve_with_dialog(m: &Manifest) -> bool {
     }
     text += "\n\nAdapters are separate programs. Only allow ones you trust.";
 
-    let allowed = rfd::MessageDialog::new()
-        .set_title("Allow adapter?")
-        .set_description(text)
-        .set_buttons(rfd::MessageButtons::YesNo)
-        .show()
+    let allowed = crate::dialog::ask("Allow adapter?", &text, rfd::MessageButtons::YesNo)
         == rfd::MessageDialogResult::Yes;
 
     if allowed {

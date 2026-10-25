@@ -1,10 +1,12 @@
 # Runs Folio on Windows and Linux, types a little, and takes screenshots,
 # so drawn menus, lists, links, spell check and Tab can be checked by eye
-# without those machines. Run by hand: Actions → Screenshots → Run workflow.
+# without those machines. Runs with every release (release.yml), and by
+# hand: Actions → Screenshots → Run workflow.
 name: Screenshots
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   linux:
@@ -99,4 +101,39 @@ jobs:
         if: always()
         with:
           name: screenshots-windows
+          path: shots/
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --no-default-features
+      - name: Run and take screenshots
+        run: |
+          mkdir -p shots cfg
+          export FOLIO_CONFIG_DIR=$PWD/cfg
+          ./target/debug/folio examples/welcome.folio &
+          PID=$!
+          sleep 10
+          shot() { screencapture -x "shots/$1.png"; }
+          keys() { osascript -e "tell application \"System Events\" to $1"; }
+          keys "set frontmost of (first process whose unix id is $PID) to true"
+          sleep 1
+          shot 1-start
+          keys "key code 125 using command down"; sleep 0.5   # Cmd+Down: end of document
+          keys "key code 36"
+          keys "keystroke \"Typed on macOOS, then a tab:\""
+          keys "key code 36"; keys "key code 48"
+          keys "keystroke \"after a tab and spaces\""
+          sleep 1; shot 2-typing
+          keys "key code 126 using command down"; sleep 0.5; shot 3-top
+          keys "keystroke \"l\" using {command down, option down}"; sleep 1; shot 4-log
+          kill $PID
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-macos
           path: shots/
