@@ -924,6 +924,11 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    /// How long a test waits for its Python adapter. Waits end as soon as it
+    /// answers; the limit is generous because Python can take several
+    /// seconds to start on a busy CI machine (Windows especially).
+    const WAIT: Duration = Duration::from_secs(30);
+
     /// Writes an adapter folder with a Python program and manifest.
     fn write_adapter(dir: &Path, name: &str, script: &str, extra: &str) {
         std::fs::create_dir_all(dir).unwrap();
@@ -991,7 +996,7 @@ for line in sys.stdin:
         host.run_command("Tools", "goal").unwrap();
         let call = wait_for(&mut host, |c| c.method == "doc.text");
         host.reply(0, call.id.unwrap(), Ok(json!({ "text": "one two three" })));
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + WAIT;
         while !host.all[0].panels.contains_key("goal") && Instant::now() < deadline {
             host.poll();
             std::thread::sleep(Duration::from_millis(20));
@@ -1130,7 +1135,7 @@ for line in sys.stdin:
         host.run_command("Fake", "share").unwrap();
 
         let until = |host: &mut Host, done: &dyn Fn(&Host) -> bool| {
-            let deadline = Instant::now() + Duration::from_secs(5);
+            let deadline = Instant::now() + WAIT;
             while !done(host) && Instant::now() < deadline {
                 host.poll();
                 std::thread::sleep(Duration::from_millis(20));
@@ -1286,7 +1291,7 @@ for line in sys.stdin:
 
         // The host shows status.set in the status line itself.
         host.emit("changed", json!({ "words": 7, "paragraphs": 2 }));
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + WAIT;
         while host.all[0].status.is_none() && Instant::now() < deadline {
             host.poll();
             std::thread::sleep(Duration::from_millis(20));
@@ -1297,7 +1302,7 @@ for line in sys.stdin:
     }
 
     fn wait_for(host: &mut Host, pred: impl Fn(&Call) -> bool) -> Call {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + WAIT;
         while Instant::now() < deadline {
             let (calls, errors) = host.poll();
             assert!(errors.is_empty(), "{errors:?}");
