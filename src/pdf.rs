@@ -24,6 +24,18 @@ pub struct Model {
 pub struct Page {
     pub texts: Vec<Text>,
     pub rects: Vec<Block>,
+    /// Areas that are links, for clickable links in PDFs.
+    pub links: Vec<LinkArea>,
+}
+
+/// A clickable area (one line of a link's text) and where it goes.
+#[derive(Serialize)]
+pub struct LinkArea {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub url: String,
 }
 
 /// One run of text (usually a word) at its baseline position.
@@ -112,6 +124,7 @@ mod tests {
                     slant: false,
                 }],
                 rects: vec![Block { x: 1.0, y: 2.0, w: 3.0, h: 4.0, color: Color32::BLACK }],
+                links: Vec::new(),
             }],
         };
         let v = to_json(&model, "essay").unwrap();

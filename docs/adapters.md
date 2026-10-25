@@ -174,10 +174,12 @@ index and a character index within it.
 
 | Method | Params | Result | Permission |
 |---|---|---|---|
-| `doc.get` | | The document (see below) plus `path` and `theme` | `document.read` |
+| `doc.get` | | The document (see below) plus `path`, `theme`, `cursor`, `anchor` and `selection` (`{ "start", "end" }` in document order, or `null`) | `document.read` |
 | `doc.text` | | `{ "text": "..." }`, paragraphs separated by `\n` | `document.read` |
 | `doc.insert` | `text` | `null`. Inserts at the caret, replacing any selection. `\n` starts a new paragraph | `document.edit` |
 | `doc.replace` | `paragraphs` | `null`. Replaces the whole document | `document.edit` |
+| `doc.set_list` | `list` (`{ "kind": "bullet" \| "numbered", "level": 0 }`, or `null` for plain paragraphs); optional `from`, `to` (paragraph indexes) | `null`. Makes the selected paragraphs (or `from..=to`) list items. One undo step | `document.edit` |
+| `doc.set_link` | `url` (or `null` to remove); optional `start`, `end` | `null`. Links the selection (or the range). With no selection, `null` removes the link at the caret | `document.edit` |
 | `status.set` | `text` (string or `null`) | `null`. Shows text in the status line; `null` clears it | none |
 | `notify` | `text` | `null`. Shows a short message for a few seconds | none |
 | `panel.set` | `id`, `lines` | `null`. Fills one of your panels. Each line is a string, or `{ "text": ..., "command": ... }` for a clickable line that runs one of your commands | none |
@@ -187,6 +189,7 @@ index and a character index within it.
 | `session.set` | `active`, `handles_undo` | `null`. Starts or ends a shared session; with `handles_undo`, Folio sends you `undo`/`redo` | none |
 | `presence.set` | `peers: [{ name, color, cursor, anchor }]` | `null`. Shows other people's carets and selections in their colors | none |
 | `ui.confirm` | `title`, `message` | `true` or `false` from a native Yes/No dialog | none |
+| `ui.prompt` | `title`, `message`, `default` | The text typed, or `null` if cancelled. Folio keeps working while it waits | none |
 | `ui.save_dialog` | `title`, `file_name`, `extension` | The chosen path, or `null` if cancelled. Starts next to the document. | none |
 
 Edits from adapters are single undo steps, so `Cmd+Z` undoes them.
@@ -207,6 +210,10 @@ The same shape as a `.folio` file:
   ]
 }
 ```
+
+A list item has `"list": { "kind": "bullet", "level": 0 }` (or `"numbered"`);
+levels go from 0 to 8, and Folio numbers items itself. A linked run has
+`"link": "https://..."`.
 
 `style` is a paragraph style name from the active theme. Runs can have `bold`,
 `italic` and `underline`.
@@ -231,7 +238,8 @@ built-in font included).
 ```
 
 `slant` means the theme has no italic file, so lean the regular face. `rects`
-are underlines. `background` is the page color when the theme sets
+are underlines. `links` lists each line of a link as `{ "x", "y", "w", "h",
+"url" }` (top left and size), for clickable links. `background` is the page color when the theme sets
 `print_background = true`.
 
 ## Versions
@@ -244,6 +252,8 @@ things, so an adapter written for an older version keeps working.
   (`snapshot`, `doc.merge`, `session.set`, `presence.set`, `undo`/`redo`),
   `ui.confirm`, and `menu =` for commands.
 - **4** added `argument` on `command` and `links` in `adapter.toml`.
+- **5** added lists and links: `list` on paragraphs, `link` on runs,
+  `doc.set_list`, `doc.set_link`, the selection in `doc.get`, and `ui.prompt`.
 
 ## Example exchange
 

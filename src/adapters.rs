@@ -24,7 +24,7 @@ use serde::Deserialize;
 use crate::doc::Pos;
 use serde_json::{Value, json};
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 pub const READ: &str = "document.read";
 pub const EDIT: &str = "document.edit";

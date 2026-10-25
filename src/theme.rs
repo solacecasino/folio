@@ -23,6 +23,8 @@ pub struct Theme {
     /// Paragraph styles by name. `body` should always exist.
     #[serde(default)]
     pub styles: BTreeMap<String, Style>,
+    #[serde(default)]
+    pub lists: Lists,
     /// Folder the theme was loaded from; font paths are relative to it.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -80,6 +82,8 @@ pub struct Colors {
     pub panel_text: Option<String>,
     /// Highlight behind find matches.
     pub find: Option<String>,
+    /// Links in the text; defaults to a blue that reads on light pages.
+    pub link: Option<String>,
 }
 
 impl Default for Colors {
@@ -95,8 +99,83 @@ impl Default for Colors {
             panel: None,
             panel_text: None,
             find: None,
+            link: None,
         }
     }
+}
+
+/// How list items look: `[lists]` in a theme.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct Lists {
+    /// Indent per level, in inches.
+    pub indent: f32,
+    /// Bullets by level, repeating for deeper levels.
+    pub bullets: Vec<String>,
+    /// Number styles by level: "1." (1, 2, 3), "a." / "A." (letters),
+    /// "i." / "I." (roman numerals); what follows the first character, like
+    /// "." or ")", is kept.
+    pub numbers: Vec<String>,
+}
+
+impl Default for Lists {
+    fn default() -> Self {
+        Self {
+            indent: 0.3,
+            bullets: vec!["•".into(), "◦".into(), "▪".into()],
+            numbers: vec!["1.".into(), "a.".into(), "i.".into()],
+        }
+    }
+}
+
+impl Lists {
+    /// The marker for a list item: its bullet, or its number written in the
+    /// style for its level.
+    pub fn marker(&self, list: crate::doc::List, number: Option<u32>) -> String {
+        let pick = |v: &[String]| v.get(list.level as usize % v.len().max(1)).cloned().unwrap_or_default();
+        match (list.kind, number) {
+            (crate::doc::ListKind::Numbered, Some(n)) => {
+                let pattern = pick(&self.numbers);
+                let mut chars = pattern.chars();
+                let style = chars.next().unwrap_or('1');
+                let rest: String = chars.collect();
+                let n_text = match style {
+                    'a' => letters(n),
+                    'A' => letters(n).to_uppercase(),
+                    'i' => roman(n),
+                    'I' => roman(n).to_uppercase(),
+                    _ => n.to_string(),
+                };
+                n_text + &rest
+            }
+            _ => pick(&self.bullets),
+        }
+    }
+}
+
+fn letters(mut n: u32) -> String {
+    let mut out = Vec::new();
+    while n > 0 {
+        n -= 1;
+        out.push((b'a' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    out.iter().rev().collect()
+}
+
+fn roman(mut n: u32) -> String {
+    let table = [
+        (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"),
+        (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i"),
+    ];
+    let mut out = String::new();
+    for (value, digits) in table {
+        while n >= value {
+            out += digits;
+            n -= value;
+        }
+    }
+    out
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

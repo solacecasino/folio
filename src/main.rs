@@ -93,6 +93,8 @@ struct Folio {
     /// `doc.print_model` requests, answered during the frame where text
     /// layout is available: (adapter, request id).
     pending_prints: Vec<(usize, Value)>,
+    /// A question an adapter asked with `ui.prompt`, waiting for an answer.
+    prompt: Option<Prompt>,
     /// (revision, cursor, anchor) last sent in a `snapshot` event.
     sent_snapshot: Option<(u64, Pos, Pos)>,
     title: String,
@@ -162,6 +164,7 @@ impl Folio {
             safety_revision: 0,
             last_auto_version: f64::NEG_INFINITY,
             pending_prints: Vec::new(),
+            prompt: None,
             sent_snapshot: None,
             title: String::new(),
             error: None,
@@ -1028,6 +1031,24 @@ impl Folio {
         for call in calls {
             let adapter = call.adapter;
             let id = call.id.clone();
+            if call.method == "ui.prompt" {
+                if let Some(id) = id {
+                    let param = |key: &str| call.params.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+                    if self.prompt.is_some() {
+                        self.adapters.reply(adapter, id, Err("another question is already open".into()));
+                    } else {
+                        self.prompt = Some(Prompt {
+                            adapter,
+                            id,
+                            title: param("title"),
+                            message: param("message"),
+                            text: param("default"),
+                            focused: false,
+                        });
+                    }
+                }
+                continue;
+            }
             if call.method == "doc.print_model" {
                 match (id, self.adapters.has_permission(adapter, adapters::READ)) {
                     (Some(id), true) => self.pending_prints.push((adapter, id)),
@@ -1077,6 +1098,51 @@ impl Folio {
                 json!({ "words": doc.word_count(), "paragraphs": doc.paragraphs.len() }),
             );
             self.sent_revision = (self.editor.revision, now);
+        }
+    }
+
+    /// Opens a link from the document. Only web and mail links: a shared
+    /// document shouldn't be able to start programs or open local files.
+    fn open_link(&mut self, url: &str, now: f64) {
+        let lower = url.to_lowercase();
+        if ["https://", "http://", "mailto:"].iter().any(|s| lower.starts_with(s)) {
+            self.open_external(url.as_ref());
+        } else {
+            self.notice = Some((format!("Folio only opens web and mail links, not {url}"), now));
+        }
+    }
+
+    /// The window for an adapter's `ui.prompt` question; answers it on OK
+    /// (with the text) or Cancel (with null).
+    fn prompt_window(&mut self, ctx: &egui::Context) {
+        let Some(prompt) = &mut self.prompt else { return };
+        let mut answer: Option<Value> = None;
+        egui::Window::new(if prompt.title.is_empty() { "Folio" } else { prompt.title.as_str() })
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_TOP, egui::vec2(0.0, 120.0))
+            .show(ctx, |ui| {
+                if !prompt.message.is_empty() {
+                    ui.label(&prompt.message);
+                }
+                let field = ui.add(egui::TextEdit::singleline(&mut prompt.text).desired_width(360.0));
+                if !prompt.focused {
+                    field.request_focus();
+                    prompt.focused = true;
+                }
+                let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() || enter {
+                        answer = Some(json!(prompt.text));
+                    }
+                    if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        answer = Some(Value::Null);
+                    }
+                });
+            });
+        if let Some(answer) = answer {
+            let p = self.prompt.take().expect("open");
+            self.adapters.reply(p.adapter, p.id, Ok(answer));
         }
     }
 
@@ -1148,7 +1214,36 @@ impl Folio {
                 let mut doc: Value = serde_json::from_str(&self.editor.doc.to_json()).map_err(|e| e.to_string())?;
                 doc["path"] = json!(self.path);
                 doc["theme"] = json!(self.theme().name);
+                let at = |p: Pos| json!({ "para": p.para, "ch": p.ch });
+                doc["cursor"] = at(self.editor.cursor());
+                doc["anchor"] = at(self.editor.anchor());
+                doc["selection"] = self
+                    .editor
+                    .selection_range()
+                    .map_or(Value::Null, |(a, b)| json!({ "start": at(a), "end": at(b) }));
                 Ok(doc)
+            }
+            "doc.set_list" => {
+                needs(adapters::EDIT)?;
+                let list = match call.params.get("list") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(serde_json::from_value::<doc::List>(v.clone()).map_err(|e| format!("list: {e}"))?),
+                };
+                let para = |key: &str| call.params.get(key).and_then(Value::as_u64).map(|n| n as usize);
+                let range = para("from").map(|from| (from, para("to").unwrap_or(from)));
+                self.editor.set_list(list, range);
+                Ok(Value::Null)
+            }
+            "doc.set_link" => {
+                needs(adapters::EDIT)?;
+                let url = call.params.get("url").and_then(Value::as_str).filter(|u| !u.is_empty());
+                let pos = |key: &str| {
+                    let v = call.params.get(key)?;
+                    Some(Pos::new(v.get("para")?.as_u64()? as usize, v.get("ch")?.as_u64()? as usize))
+                };
+                let range = pos("start").zip(pos("end"));
+                self.editor.set_link(url, range)?;
+                Ok(Value::Null)
             }
             "doc.text" => {
                 needs(adapters::READ)?;
@@ -1399,7 +1494,7 @@ impl eframe::App for Folio {
             self.find_focused = false;
         }
         self.editor.highlights = if self.find.open { self.find.matches.clone() } else { Vec::new() };
-        self.editor.keyboard = !self.find_focused;
+        self.editor.keyboard = !self.find_focused && self.prompt.is_none();
         self.editor.smart_quotes = self.settings.smart_quotes;
         self.editor.smart_dashes = self.settings.smart_dashes;
 
@@ -1423,6 +1518,10 @@ impl eframe::App for Folio {
             }
         }
         self.editor.show(&mut page_ui, &self.themes[self.theme], &self.fonts, &page_text, self.speller.as_mut());
+        if let Some(url) = self.editor.open_link.take() {
+            self.open_link(&url, now);
+        }
+        self.prompt_window(&ctx);
 
         if let Some(w) = &mut self.log_window
             && !w.show(&ctx)
@@ -1453,6 +1552,17 @@ impl eframe::App for Folio {
             self.title = title;
         }
     }
+}
+
+/// A question from an adapter (`ui.prompt`).
+struct Prompt {
+    adapter: usize,
+    id: Value,
+    title: String,
+    message: String,
+    text: String,
+    /// The text field has been given the keyboard once.
+    focused: bool,
 }
 
 fn needs_permission(permission: &str) -> String {

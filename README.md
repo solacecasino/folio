@@ -16,7 +16,7 @@ of [foobar2000](https://www.foobar2000.org/).
 - **A safety net:** autosave, crash recovery, and a version history you can browse and restore
 - **Spell check** with your system's dictionaries, plus smart quotes, em dashes and ellipses as you type
 - **Find & replace** with match case and whole words
-- **Rich text:** bold, italic, underline and paragraph styles (title, headings, quote, …)
+- **Rich text:** bold, italic, underline, paragraph styles (title, headings, quote, …), bulleted and numbered lists, and links; Tab indents (lists and links are made with the optional Rich Content adapter, and print and export to PDF as they look)
 - **Themes are files:** fonts, colors, page setup, headers and footers, and every paragraph style live in a TOML file. Copy one, change anything, share it. No paid templates.
 - **No settings window:** `settings.toml` and `keys.toml` control everything, reload live as you save them, and every shortcut is remappable
 - **A formatting language** for the status line, window title, page headers and footers, and panels: `%words% $plural(%words%,word)[ · %selection_words% selected]`
@@ -146,6 +146,8 @@ a form with one field. The protocol is in [docs/adapters.md](docs/adapters.md).
 | `Cmd+E` | Export as PDF (with the pdf-export adapter) |
 | `Cmd+F` / `Cmd+G` / `Cmd+Alt+F` | Find, find next, find and replace |
 | `Cmd+B` / `Cmd+I` / `Cmd+U` | Bold, italic, underline |
+| `Tab` / `Shift+Tab` | Indent (a list item: one level in or out) |
+| `Cmd`-click | Open a link |
 | `Cmd+0`–`Cmd+9` | Paragraph styles (set by the theme) |
 | `Cmd+T` | Next theme |
 | `Cmd+=` / `Cmd+-` | Zoom |

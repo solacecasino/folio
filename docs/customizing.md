@@ -201,4 +201,10 @@ print_background = false   # true prints the page color in PDFs
 panel = "#2a2a2a"
 panel_text = "#cccccc"
 find = "#ffcc0055"         # highlight behind find matches
+link = "#2a63c9"           # links in the text
+
+[lists]                    # list items (make them with the Rich Content adapter)
+indent = 0.3               # inches per level
+bullets = ["•", "◦", "▪"]  # by level, repeating
+numbers = ["1.", "a.", "i."]  # 1. 2. 3. / a. b. c. / i. ii. iii. (also "A.", "I.", "1)")
 ```

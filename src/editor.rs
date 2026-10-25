@@ -24,6 +24,8 @@ const DPI: f32 = 96.0;
 
 struct ParaLayout {
     galley: Arc<Galley>,
+    /// A list item's bullet or number, drawn this far left of the text.
+    marker: Option<(Arc<Galley>, f32)>,
     /// Where the paragraph's rows sit on the canvas. Usually one piece; a
     /// paragraph that runs past the bottom of a page continues as a second
     /// piece at the top of the next.
@@ -158,6 +160,8 @@ pub struct Editor {
     spell_target: Option<SpellTarget>,
     /// Other people editing with you (from a sharing adapter).
     pub peers: Vec<crate::adapters::Peer>,
+    /// A link that was Cmd/Ctrl-clicked, for the app to open.
+    pub open_link: Option<String>,
 }
 
 #[derive(Clone)]
@@ -196,6 +200,7 @@ impl Editor {
             smart_dashes: true,
             spell_target: None,
             peers: Vec::new(),
+            open_link: None,
         }
     }
 
@@ -307,6 +312,12 @@ impl Editor {
     fn new_paragraph(&mut self, theme: &Theme) {
         self.checkpoint(EditKind::Other);
         self.delete_selection();
+        // Enter on an empty list item ends the list instead.
+        let para = &mut self.doc.paragraphs[self.cursor.para];
+        if para.list.is_some() && para.chars.is_empty() {
+            para.list = None;
+            return;
+        }
         let style = &self.doc.paragraphs[self.cursor.para].style;
         // Enter at the end moves on to the style's `next`; in the middle it keeps the style.
         let next = if self.cursor.ch == self.doc.paragraphs[self.cursor.para].len() {
@@ -332,6 +343,60 @@ impl Editor {
         self.checkpoint(EditKind::Other);
         if !self.delete_selection() && to != self.cursor {
             self.doc.delete(self.cursor, to);
+        }
+    }
+
+    /// The paragraphs the selection (or caret) touches.
+    fn selected_paragraphs(&self) -> (usize, usize) {
+        let (a, b) = self.selection().unwrap_or((self.cursor, self.cursor));
+        (a.para, b.para)
+    }
+
+    /// Makes the selected paragraphs list items, or plain paragraphs with
+    /// None. One undo step.
+    pub fn set_list(&mut self, list: Option<crate::doc::List>, range: Option<(usize, usize)>) {
+        self.checkpoint(EditKind::Other);
+        let (from, to) = range.unwrap_or_else(|| self.selected_paragraphs());
+        self.doc.set_list(from.min(to), from.max(to), list);
+    }
+
+    /// Links the selection (or the given range) to `url`, or removes links
+    /// with None; with nothing selected, removing works on the link at the
+    /// caret. One undo step.
+    pub fn set_link(&mut self, url: Option<&str>, range: Option<(Pos, Pos)>) -> Result<(), String> {
+        let range = range.map(|(a, b)| (self.doc.clamp(a), self.doc.clamp(b))).or_else(|| self.selection());
+        let (a, b) = match range {
+            Some(r) => r,
+            None if url.is_none() => match self.doc.link_at(self.cursor) {
+                Some((a, b, _)) => (a, b),
+                None => return Ok(()),
+            },
+            None => return Err("Select the text to link first".into()),
+        };
+        self.checkpoint(EditKind::Other);
+        self.doc.set_link(a, b, url);
+        Ok(())
+    }
+
+    /// Tab: indents a list item one level (Shift+Tab: back out, and out of
+    /// the list at the top level); anywhere else, inserts a tab.
+    fn tab(&mut self, back: bool, theme: &Theme) {
+        let (from, to) = self.selected_paragraphs();
+        if self.doc.paragraphs[from].list.is_some() {
+            self.checkpoint(EditKind::Other);
+            for p in &mut self.doc.paragraphs[from..=to] {
+                p.list = match p.list {
+                    Some(l) if back && l.level == 0 => None,
+                    Some(l) if back => Some(crate::doc::List { level: l.level - 1, ..l }),
+                    Some(l) => Some(crate::doc::List {
+                        level: (l.level + 1).min(crate::doc::MAX_LIST_LEVEL),
+                        ..l
+                    }),
+                    None => None,
+                };
+            }
+        } else if !back {
+            self.insert_text("\t", theme, EditKind::Other);
         }
     }
 
@@ -487,24 +552,27 @@ impl Editor {
         let page_top = |i: usize| gap + i as f32 * (page_h + gap);
 
         let text_color = color(&theme.colors.text);
+        let link_color = theme.colors.link.as_deref().map_or(Color32::from_rgb(0x2a, 0x63, 0xc9), color);
+        let numbers = self.doc.list_numbers();
         let mut paras = Vec::with_capacity(self.doc.paragraphs.len());
         let mut page_i = 0;
         let mut y = mt;
 
-        for para in &self.doc.paragraphs {
+        for (index, para) in self.doc.paragraphs.iter().enumerate() {
             let style = theme.style(&para.style);
             let size = style.size * pt;
             let fg = style.color.as_deref().map_or(text_color, color);
             let family = format!("{}:{}", theme.name, style.font);
             let format_for = |f: Fmt| {
                 let face = fonts.face(&family, style.bold || f.bold, style.italic || f.italic);
+                let c = if f.link.is_some() { link_color } else { fg };
                 TextFormat {
                     font_id: FontId::new(size, face.family),
-                    color: fg,
+                    color: c,
                     line_height: Some(size * style.line_height),
                     italics: face.synthetic_italic,
-                    underline: if f.underline {
-                        Stroke::new((size / 14.0).max(1.0), fg)
+                    underline: if f.underline || f.link.is_some() {
+                        Stroke::new((size / 14.0).max(1.0), c)
                     } else {
                         Stroke::NONE
                     },
@@ -512,16 +580,28 @@ impl Editor {
                 }
             };
 
+            // A list item is indented one step per level, plus one for its
+            // marker, and is always left-aligned.
+            let list_indent = para.list.map_or(0.0, |l| (l.level as f32 + 1.0) * theme.lists.indent * inch);
+            let marker = para.list.map(|l| {
+                let text = theme.lists.marker(l, numbers[index]);
+                let galley = ui.painter().layout_job(LayoutJob::single_section(text, format_for(Fmt::default())));
+                // Right-aligned a little before the text.
+                let dx = -(galley.size().x + 0.08 * inch);
+                (galley, dx)
+            });
+
             let mut job = LayoutJob::default();
-            job.wrap.max_width = content_w;
+            job.wrap.max_width = (content_w - list_indent).max(20.0);
             job.first_row_min_height = size * style.line_height;
             job.keep_trailing_whitespace = true;
-            job.halign = match style.align {
+            let align = if para.list.is_some() { Align::Left } else { style.align };
+            job.halign = match align {
                 Align::Center => EAlign::Center,
                 Align::Right => EAlign::Max,
                 _ => EAlign::Min,
             };
-            job.justify = style.align == Align::Justify;
+            job.justify = align == Align::Justify;
             let indent = style.indent * inch;
             let runs = para.runs();
             if runs.is_empty() {
@@ -545,10 +625,10 @@ impl Editor {
             }
             y += before;
             let anchor_x = page_x
-                + match style.align {
+                + match align {
                     Align::Center => ml + content_w / 2.0,
                     Align::Right => ml + content_w,
-                    _ => ml,
+                    _ => ml + list_indent,
                 };
             let (placed, end_page, end_y) = paginate(&rows, page_i, y, mt, page_h - mb);
             let pieces = placed
@@ -558,7 +638,7 @@ impl Editor {
                     origin: pos2(anchor_x, page_top(page) + offset),
                 })
                 .collect();
-            paras.push(ParaLayout { galley, pieces });
+            paras.push(ParaLayout { galley, marker, pieces });
             page_i = end_page;
             y = end_y + style.space_after * pt;
         }
@@ -673,12 +753,30 @@ impl Editor {
         let mut pages: Vec<pdf::Page> = layout.pages.iter().map(|_| pdf::Page::default()).collect();
         let page_of = |y: f32| layout.pages.iter().position(|p| y < p.bottom()).unwrap_or(layout.pages.len() - 1);
         let text_color = color(&theme.colors.text);
+        let link_color = theme.colors.link.as_deref().map_or(Color32::from_rgb(0x2a, 0x63, 0xc9), color);
 
         for (i, pl) in layout.paras.iter().enumerate() {
             let para = &self.doc.paragraphs[i];
             let style = theme.style(&para.style);
             let family = format!("{}:{}", theme.name, style.font);
             let fg = style.color.as_deref().map_or(text_color, color);
+            // The list marker, at the first row's baseline.
+            if let (Some((marker, dx)), Some(first), Some(row)) = (&pl.marker, pl.pieces.first(), pl.galley.rows.first()) {
+                let base = first.origin + row.pos.to_vec2() + vec2(*dx, 0.0);
+                let page_i = page_of(base.y);
+                let at = (base - layout.pages[page_i].min.to_vec2()) * k;
+                let baseline = marker.rows.first().and_then(|r| r.glyphs.first()).map_or(0.0, |g| g.pos.y);
+                let (font, slant) = fonts.file(&family, style.bold, style.italic);
+                pages[page_i].texts.push(pdf::Text {
+                    x: at.x,
+                    y: at.y + baseline * k,
+                    text: marker.text().to_owned(),
+                    font,
+                    size: style.size,
+                    color: fg,
+                    slant,
+                });
+            }
             let mut ch = 0; // character index where the row starts
             for (r, row) in pl.galley.rows.iter().enumerate() {
                 let base = pl.piece_for_row(r).origin + row.pos.to_vec2();
@@ -686,19 +784,36 @@ impl Editor {
                 let page_min = layout.pages[page_i].min.to_vec2();
                 let page = &mut pages[page_i];
                 let mut word: Option<(pdf::Text, Fmt)> = None;
+                let mut link: Option<(crate::doc::Link, pdf::LinkArea)> = None;
+                let row_h = (row.max_y() - row.min_y()) * k;
 
                 for (g, glyph) in row.glyphs.iter().enumerate() {
                     let fmt = para.fmts.get(ch + g).copied().unwrap_or_default();
                     let at = (base + glyph.pos.to_vec2() - page_min) * k;
-                    if fmt.underline {
+                    let c = if fmt.link.is_some() { link_color } else { fg };
+                    if fmt.underline || fmt.link.is_some() {
                         let thickness = (style.size / 14.0).max(0.5);
                         page.rects.push(pdf::Block {
                             x: at.x,
                             y: at.y + style.size * 0.12,
                             w: glyph.advance_width * k,
                             h: thickness,
-                            color: fg,
+                            color: c,
                         });
+                    }
+                    // One clickable area per run of a link on this line.
+                    match (&mut link, fmt.link) {
+                        (Some((l, area)), Some(this)) if *l == this => area.w = at.x + glyph.advance_width * k - area.x,
+                        (_, this) => {
+                            page.links.extend(link.take().map(|(_, a)| a));
+                            link = this.map(|l| {
+                                let top = (base.y + row.min_y() - row.pos.y - page_min.y) * k;
+                                (
+                                    l,
+                                    pdf::LinkArea { x: at.x, y: top, w: glyph.advance_width * k, h: row_h, url: l.url() },
+                                )
+                            });
+                        }
                     }
                     if glyph.chr.is_whitespace() {
                         page.texts.extend(word.take().map(|w| w.0));
@@ -716,7 +831,7 @@ impl Editor {
                                     text: glyph.chr.to_string(),
                                     font,
                                     size: style.size,
-                                    color: fg,
+                                    color: c,
                                     slant,
                                 },
                                 fmt,
@@ -725,6 +840,7 @@ impl Editor {
                     }
                 }
                 page.texts.extend(word.take().map(|w| w.0));
+                page.links.extend(link.take().map(|(_, a)| a));
                 ch += row.char_count_including_newline().0;
             }
         }
@@ -810,7 +926,16 @@ impl Editor {
             return;
         };
         let (p, prefer) = self.pos_at(layout, pointer - offset);
-        let shift = ui.input(|i| i.modifiers.shift);
+        let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        // Cmd/Ctrl-click opens a link; a plain click edits it.
+        let link = self.doc.link_at(p).filter(|(a, b, _)| (p > *a && p < *b) || p == *a);
+        if command && link.is_some() && response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if command && response.clicked() && let Some((_, _, link)) = link {
+            self.open_link = Some(link.url());
+            return;
+        }
         if response.double_clicked() {
             self.anchor = self.doc.word_left(Pos::new(p.para, (p.ch + 1).min(self.doc.paragraphs[p.para].len())));
             self.cursor = self.doc.word_right(p);
@@ -885,6 +1010,12 @@ impl Editor {
 
         match key {
             Key::Enter => self.new_paragraph(theme),
+            Key::Tab if !m.command && !m.alt => self.tab(m.shift, theme),
+            // Backspace at the start of a list item takes away its bullet first.
+            Key::Backspace if p.ch == 0 && self.selection().is_none() && self.doc.paragraphs[p.para].list.is_some() => {
+                self.checkpoint(EditKind::Other);
+                self.doc.paragraphs[p.para].list = None;
+            }
             Key::Backspace => {
                 let to = if line {
                     self.row_edge(layout, false)
@@ -1166,6 +1297,12 @@ impl Editor {
                 };
                 painter.with_clip_rect(clip).galley(piece.origin + offset, pl.galley.clone(), Color32::BLACK);
             }
+            if let (Some((marker, dx)), Some(first)) = (&pl.marker, pl.pieces.first()) {
+                let at = first.origin + offset + vec2(*dx, 0.0);
+                if visible.contains(at) || visible.contains(at + marker.size()) {
+                    painter.galley(at, marker.clone(), Color32::BLACK);
+                }
+            }
         }
 
         // Other people's carets, with their names.
@@ -1297,6 +1434,74 @@ mod tests {
 
     /// Lays out a real document headlessly with the Paper theme and checks the
     /// print model: several pages, every word present, headings in bold Georgia.
+    #[test]
+    fn tab_indents_and_lists_continue_and_end() {
+        let theme: Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
+        let mut ed = typed("Hello");
+        ed.tab(false, &theme);
+        assert_eq!(plain(&ed), "Hello\t", "Tab outside a list inserts a tab");
+        ed.tab(true, &theme);
+        assert_eq!(plain(&ed), "Hello\t", "Shift+Tab outside a list does nothing");
+
+        let bullet = |level| Some(crate::doc::List { kind: crate::doc::ListKind::Bullet, level });
+        ed.set_list(bullet(0), None);
+        ed.tab(false, &theme);
+        assert_eq!(ed.doc.paragraphs[0].list, bullet(1), "Tab in a list item indents it");
+        assert_eq!(plain(&ed), "Hello\t", "without typing a tab");
+        ed.tab(true, &theme);
+        ed.tab(true, &theme);
+        assert_eq!(ed.doc.paragraphs[0].list, None, "Shift+Tab at the top level leaves the list");
+
+        ed.set_list(bullet(0), None);
+        ed.new_paragraph(&theme);
+        assert_eq!(ed.doc.paragraphs[1].list, bullet(0), "Enter continues the list");
+        ed.new_paragraph(&theme);
+        assert_eq!(ed.doc.paragraphs.len(), 2, "Enter on an empty item ends the list instead");
+        assert_eq!(ed.doc.paragraphs[1].list, None);
+        ed.undo();
+        assert_eq!(ed.doc.paragraphs[1].list, bullet(0), "and that's undoable");
+
+        assert!(ed.set_link(Some("https://x.y"), None).is_err(), "linking needs a selection");
+        ed.select(Pos::new(0, 0), Pos::new(0, 5));
+        ed.set_link(Some("https://x.y"), None).unwrap();
+        assert_eq!(ed.doc.paragraphs[0].fmts[2].link.map(crate::doc::Link::url).as_deref(), Some("https://x.y"));
+        ed.select(Pos::new(0, 2), Pos::new(0, 2));
+        ed.set_link(None, None).unwrap();
+        assert!(ed.doc.paragraphs[0].fmts.iter().all(|f| f.link.is_none()), "unlinking at the caret removes the whole link");
+    }
+
+    #[test]
+    fn lists_and_links_print() {
+        let ctx = egui::Context::default();
+        let theme: Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
+        let fonts = crate::theme::install_fonts(&ctx, std::slice::from_ref(&theme));
+        let mut doc = Document::default();
+        doc.insert(Pos::default(), "First\nSecond\nA link here", Fmt::default(), "body");
+        let numbered = Some(crate::doc::List { kind: crate::doc::ListKind::Numbered, level: 0 });
+        doc.set_list(0, 1, numbered);
+        doc.set_link(Pos::new(2, 2), Pos::new(2, 6), Some("https://example.com"));
+        let editor = Editor::new(doc);
+        let mut model = None;
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(Default::default(), |ui| {
+                model = Some(editor.print_model(ui, &theme, &fonts, &|_, _| (String::new(), String::new())));
+            });
+            out.textures_delta.clear();
+        }
+        let page = &model.unwrap().pages[0];
+        let texts: Vec<&str> = page.texts.iter().map(|t| t.text.as_str()).collect();
+        assert!(texts.contains(&"1.") && texts.contains(&"2."), "{texts:?}");
+        let marker = page.texts.iter().find(|t| t.text == "1.").unwrap();
+        let first = page.texts.iter().find(|t| t.text == "First").unwrap();
+        assert!(marker.x < first.x && (marker.y - first.y).abs() < 1.0, "marker sits left of the text, on its line");
+        assert!(first.x > 72.0 * 1.1 + 10.0, "list text is indented");
+        assert_eq!(page.links.len(), 1);
+        assert_eq!(page.links[0].url, "https://example.com");
+        assert!(page.links[0].w > 10.0 && page.links[0].h > 5.0);
+        let link_word = page.texts.iter().find(|t| t.text == "link").unwrap();
+        assert_ne!(link_word.color, first.color, "links are colored");
+    }
+
     #[test]
     fn print_model_matches_the_document() {
         let ctx = egui::Context::default();

@@ -2,6 +2,8 @@
 //! with per-character formatting. Kept independent of the UI so plugins and
 //! exporters can work on it directly later.
 
+use std::sync::Mutex;
+
 use serde::{Deserialize, Serialize};
 
 /// Inline formatting for a single character.
@@ -13,7 +15,51 @@ pub struct Fmt {
     pub italic: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub underline: bool,
+    /// The link this character is part of. Files store the URL itself.
+    #[serde(skip)]
+    pub link: Option<Link>,
 }
+
+/// A link target. URLs are kept in one table so formatting stays a small
+/// `Copy` value per character; the same URL always gets the same `Link`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Link(u32);
+
+static LINKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+impl Link {
+    pub fn new(url: &str) -> Self {
+        let mut links = LINKS.lock().unwrap_or_else(|e| e.into_inner());
+        let i = links.iter().position(|u| u == url).unwrap_or_else(|| {
+            links.push(url.to_owned());
+            links.len() - 1
+        });
+        Link(i as u32)
+    }
+
+    pub fn url(self) -> String {
+        LINKS.lock().unwrap_or_else(|e| e.into_inner())[self.0 as usize].clone()
+    }
+}
+
+/// A paragraph that's a list item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct List {
+    pub kind: ListKind,
+    /// Nesting depth, 0 for the outermost level.
+    #[serde(default)]
+    pub level: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ListKind {
+    Bullet,
+    Numbered,
+}
+
+/// Deepest list nesting.
+pub const MAX_LIST_LEVEL: u8 = 8;
 
 fn is_false(b: &bool) -> bool {
     !*b
@@ -26,6 +72,8 @@ pub struct Paragraph {
     pub chars: Vec<char>,
     /// Same length as `chars`.
     pub fmts: Vec<Fmt>,
+    /// Set when the paragraph is a list item.
+    pub list: Option<List>,
 }
 
 impl Paragraph {
@@ -34,6 +82,7 @@ impl Paragraph {
             style: style.to_owned(),
             chars: Vec::new(),
             fmts: Vec::new(),
+            list: None,
         }
     }
 
@@ -114,6 +163,8 @@ impl Document {
         let mut tail = Paragraph::new(next_style);
         tail.chars = para.chars.split_off(p.ch);
         tail.fmts = para.fmts.split_off(p.ch);
+        // A list continues onto the new line.
+        tail.list = para.list;
         // Splitting at the very start keeps the style on the line that moves down.
         if p.ch == 0 {
             tail.style = para.style.clone();
@@ -261,6 +312,61 @@ impl Document {
         found
     }
 
+    /// Makes paragraphs `from..=to` list items (or plain paragraphs with None).
+    pub fn set_list(&mut self, from: usize, to: usize, list: Option<List>) {
+        let last = self.paragraphs.len() - 1;
+        for p in &mut self.paragraphs[from.min(last)..=to.min(last)] {
+            p.list = list;
+        }
+    }
+
+    /// Links the range to `url`, or removes links in it with None.
+    pub fn set_link(&mut self, a: Pos, b: Pos, url: Option<&str>) {
+        let link = url.map(Link::new);
+        self.for_each_fmt(a, b, |f| f.link = link);
+    }
+
+    /// The whole link around a position, if there's one: its range and URL.
+    pub fn link_at(&self, p: Pos) -> Option<(Pos, Pos, Link)> {
+        let fmts = &self.paragraphs[p.para].fmts;
+        // The character at the position, or the one before it at a run's end.
+        let i = [p.ch, p.ch.wrapping_sub(1)].into_iter().find(|&i| fmts.get(i).is_some_and(|f| f.link.is_some()))?;
+        let link = fmts[i].link?;
+        let start = (0..=i).rev().take_while(|&k| fmts[k].link == Some(link)).last().unwrap_or(i);
+        let end = (i..fmts.len()).take_while(|&k| fmts[k].link == Some(link)).last().unwrap_or(i) + 1;
+        Some((Pos::new(p.para, start), Pos::new(p.para, end), link))
+    }
+
+    /// The number shown for each numbered list item (1, 2, 3 ...), counting
+    /// per level and starting again after anything that isn't a list item.
+    pub fn list_numbers(&self) -> Vec<Option<u32>> {
+        let mut counters = [0u32; MAX_LIST_LEVEL as usize + 1];
+        self.paragraphs
+            .iter()
+            .map(|p| match p.list {
+                None => {
+                    counters = [0; MAX_LIST_LEVEL as usize + 1];
+                    None
+                }
+                Some(List { kind, level }) => {
+                    let level = level.min(MAX_LIST_LEVEL) as usize;
+                    // Going back up a level starts deeper levels over.
+                    counters[level + 1..].iter_mut().for_each(|c| *c = 0);
+                    match kind {
+                        ListKind::Numbered => {
+                            counters[level] += 1;
+                            Some(counters[level])
+                        }
+                        ListKind::Bullet => {
+                            counters[level] = 0;
+                            None
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+
     pub fn word_count(&self) -> usize {
         self.paragraphs
             .iter()
@@ -292,6 +398,9 @@ struct FileDoc {
 #[derive(Serialize, Deserialize)]
 struct FilePara {
     style: String,
+    /// `{ "kind": "bullet" | "numbered", "level": 0 }` for list items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    list: Option<List>,
     #[serde(default)]
     runs: Vec<FileRun>,
 }
@@ -301,6 +410,9 @@ struct FileRun {
     text: String,
     #[serde(flatten)]
     fmt: Fmt,
+    /// The URL of a linked run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link: Option<String>,
 }
 
 impl Document {
@@ -314,10 +426,15 @@ impl Document {
                 .iter()
                 .map(|p| FilePara {
                     style: p.style.clone(),
+                    list: p.list,
                     runs: p
                         .runs()
                         .into_iter()
-                        .map(|(text, fmt)| FileRun { text, fmt })
+                        .map(|(text, fmt)| FileRun {
+                            text,
+                            link: fmt.link.map(Link::url),
+                            fmt,
+                        })
                         .collect(),
                 })
                 .collect(),
@@ -332,10 +449,18 @@ impl Document {
             .into_iter()
             .map(|fp| {
                 let mut p = Paragraph::new(&fp.style);
+                p.list = fp.list.map(|l| List {
+                    level: l.level.min(MAX_LIST_LEVEL),
+                    ..l
+                });
                 for run in fp.runs {
+                    let fmt = Fmt {
+                        link: run.link.as_deref().filter(|u| !u.is_empty()).map(Link::new),
+                        ..run.fmt
+                    };
                     for c in run.text.chars().filter(|c| *c != '\n' && *c != '\r') {
                         p.chars.push(c);
-                        p.fmts.push(run.fmt);
+                        p.fmts.push(fmt);
                     }
                 }
                 p
@@ -355,6 +480,38 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_and_links_round_trip_and_number_themselves() {
+        let mut doc = Document::default();
+        let end = doc.insert(Pos::default(), "Intro\nOne\nTwo\nDeeper\nThree\nAfter", Fmt::default(), "body");
+        assert_eq!(end.para, 5);
+        let numbered = |level| Some(List { kind: ListKind::Numbered, level });
+        doc.set_list(1, 2, numbered(0));
+        doc.set_list(3, 3, Some(List { kind: ListKind::Bullet, level: 1 }));
+        doc.set_list(4, 4, numbered(0));
+        assert_eq!(doc.list_numbers(), [None, Some(1), Some(2), None, Some(3), None], "a nested item doesn't restart its parent");
+
+        doc.set_link(Pos::new(0, 0), Pos::new(0, 5), Some("https://example.com"));
+        let (a, b, link) = doc.link_at(Pos::new(0, 2)).unwrap();
+        assert_eq!((a, b, link.url().as_str()), (Pos::new(0, 0), Pos::new(0, 5), "https://example.com"));
+        assert!(doc.link_at(Pos::new(0, 5)).is_some(), "right after a link still counts");
+        assert!(doc.link_at(Pos::new(1, 1)).is_none());
+
+        let back = Document::from_json(&doc.to_json()).unwrap();
+        assert_eq!(back.paragraphs[2].list, numbered(0));
+        assert_eq!(back.paragraphs[3].list.unwrap().level, 1);
+        assert_eq!(back.paragraphs[0].fmts[0].link.map(Link::url).as_deref(), Some("https://example.com"));
+        assert!(back.paragraphs[5].list.is_none());
+        assert!(doc.to_json().contains("\"link\": \"https://example.com\""), "files keep the URL itself");
+
+        // Enter in a list item continues the list.
+        let p = doc.split(Pos::new(2, 3), "body");
+        assert_eq!(doc.paragraphs[p.para].list, numbered(0));
+        // Older files without lists or links still load.
+        let old = Document::from_json(r#"{"folio":1,"paragraphs":[{"style":"body","runs":[{"text":"Hi","bold":true}]}]}"#).unwrap();
+        assert!(old.paragraphs[0].list.is_none() && old.paragraphs[0].fmts[0].link.is_none());
+    }
 
     fn plain(doc: &Document) -> String {
         doc.text(Pos::default(), doc.end())

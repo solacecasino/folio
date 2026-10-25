@@ -2,20 +2,141 @@
   "folio": 1,
   "theme": "Paper",
   "paragraphs": [
-    { "style": "title", "runs": [{ "text": "Welcome to Folio" }] },
-    { "style": "body", "runs": [
-      { "text": "Folio starts " },
-      { "text": "bare", "italic": true },
-      { "text": " and gets out of your way. There is no ribbon, no template store and no account. Everything about how a document looks lives in a " },
-      { "text": "theme file", "bold": true },
-      { "text": " you can open in any text editor." }
-    ]},
-    { "style": "h1", "runs": [{ "text": "Make it yours" }] },
-    { "style": "body", "runs": [
-      { "text": "Press Cmd+T to cycle themes, Cmd+1 and Cmd+2 for headings, Cmd+0 for body text. Copy a file from the themes folder, change the fonts, margins, colors or page size, and it shows up here." }
-    ]},
-    { "style": "quote", "runs": [{ "text": "Bare when installed, insanely customizable." }] },
-    { "style": "h2", "runs": [{ "text": "Shortcuts" }] },
-    { "style": "body", "runs": [{ "text": "Press Cmd+/ to see every shortcut. Cmd+. hides the status line." }] }
+    {
+      "style": "title",
+      "runs": [
+        {
+          "text": "Welcome to Folio"
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "runs": [
+        {
+          "text": "Folio starts "
+        },
+        {
+          "text": "bare",
+          "italic": true
+        },
+        {
+          "text": " and gets out of your way. There is no ribbon, no template store and no account. Everything about how a document looks lives in a "
+        },
+        {
+          "text": "theme file",
+          "bold": true
+        },
+        {
+          "text": " you can open in any text editor."
+        }
+      ]
+    },
+    {
+      "style": "h1",
+      "runs": [
+        {
+          "text": "Make it yours"
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "runs": [
+        {
+          "text": "Press Cmd+T to cycle themes, Cmd+1 and Cmd+2 for headings, Cmd+0 for body text. Copy a file from the themes folder, change the fonts, margins, colors or page size, and it shows up here."
+        }
+      ]
+    },
+    {
+      "style": "quote",
+      "runs": [
+        {
+          "text": "Bare when installed, insanely customizable."
+        }
+      ]
+    },
+    {
+      "style": "h2",
+      "runs": [
+        {
+          "text": "Lists and links"
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "list": {
+        "kind": "bullet",
+        "level": 0
+      },
+      "runs": [
+        {
+          "text": "Press "
+        },
+        {
+          "text": "Tab",
+          "bold": true
+        },
+        {
+          "text": " to indent a list item, Shift+Tab to bring it back."
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "list": {
+        "kind": "bullet",
+        "level": 1
+      },
+      "runs": [
+        {
+          "text": "Enter starts the next item; Enter on an empty one ends the list."
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "list": {
+        "kind": "bullet",
+        "level": 0
+      },
+      "runs": [
+        {
+          "text": "Cmd-click (Ctrl-click on Windows and Linux) a link to open it, like "
+        },
+        {
+          "text": "Folio's home page",
+          "link": "https://github.com/solacecasino/folio"
+        },
+        {
+          "text": "."
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "runs": [
+        {
+          "text": "To make your own, add the Rich Content adapter from the Adapters window (Cmd+Shift+A). It adds bulleted and numbered lists and links to the Format menu."
+        }
+      ]
+    },
+    {
+      "style": "h2",
+      "runs": [
+        {
+          "text": "Shortcuts"
+        }
+      ]
+    },
+    {
+      "style": "body",
+      "runs": [
+        {
+          "text": "Press Cmd+/ to see every shortcut. Cmd+. hides the status line."
+        }
+      ]
+    }
   ]
 }
