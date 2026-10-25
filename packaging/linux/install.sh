@@ -37,5 +37,6 @@ echo "Installed Folio to $PREFIX/bin/folio. Find it in your app menu, or run: fo
 if command -v ldconfig >/dev/null && ! ldconfig -p | grep -q libxkbcommon-x11.so; then
   echo "Folio also needs libxkbcommon-x11: sudo apt install libxkbcommon-x11-0 (Debian/Ubuntu), sudo dnf install libxkbcommon-x11 (Fedora)."
 fi
-command -v zenity >/dev/null || echo "For Folio's questions and dialogs, install zenity: sudo apt install zenity (or your system's equivalent)."
+command -v zenity >/dev/null || command -v kdialog >/dev/null || command -v xmessage >/dev/null \
+  || echo "For Folio's questions (like saving before closing), install zenity: sudo apt install zenity (or your system's equivalent)."
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) echo "(Add $PREFIX/bin to your PATH to run it from a terminal.)" ;; esac
