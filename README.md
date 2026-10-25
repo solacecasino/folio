@@ -56,6 +56,8 @@ Ubuntu: `sudo apt install libxkbcommon-dev libgl1-mesa-dev`. Releases are
 built on all three platforms by [GitHub Actions](.github/workflows/release.yml)
 when a version tag is pushed.
 
+How Folio is built, and why: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Customizing
 
 Everything lives in one folder (**Folio → Open Config Folder**):
