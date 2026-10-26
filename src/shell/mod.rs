@@ -130,8 +130,16 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
         if self.running.is_some() {
             return;
         }
-        with_event_loop(event_loop, || {
-            if let Err(e) = self.start(event_loop) {
+        with_event_loop(event_loop, || match self.start(event_loop) {
+            // The window stays hidden until it has something to show, and
+            // Windows never asks a hidden window to draw: draw the first
+            // frame right away.
+            Ok(()) => {
+                if let Some(running) = &mut self.running {
+                    running.frame(event_loop);
+                }
+            }
+            Err(e) => {
                 self.error = Some(e);
                 event_loop.exit();
             }
@@ -268,7 +276,6 @@ impl<A: App> Runner<A> {
             }
         });
         self.running = Some(Running { app, shared });
-        window.request_redraw();
         Ok(())
     }
 }
