@@ -1,7 +1,7 @@
 //! The Adapters window: what's installed, what each adapter may do, its
 //! commands, and adding or removing adapters. Folio ships with none.
 
-use eframe::egui::{self, Color32, CornerRadius, Margin, RichText, Stroke, ViewportBuilder, ViewportId};
+use egui::{self, Color32, CornerRadius, Margin, RichText, Stroke, ViewportBuilder, ViewportId};
 
 use crate::adapters::{self, Host};
 use crate::keys::{Command, Keymap};

@@ -1,6 +1,6 @@
 [package]
 name = "folio"
-version = "1.0.6"
+version = "2.0.0"
 edition = "2024"
 description = "A document editor that ships bare and is endlessly customizable through themes and adapters."
 license = "MIT"
@@ -14,10 +14,16 @@ wasi-plugins = ["dep:folio_plugin"]
 
 [dependencies]
 memmap2 = "0.9.12"
-# Without eframe's system font loader: Folio loads its own fonts.
-eframe = { version = "0.37.0", default-features = false, features = [
-    "accesskit", "clipboard", "default_fonts", "links", "wayland", "wgpu", "x11",
+# The interface (egui), the window and input (winit, egui-winit), and the
+# pixels: drawn by the CPU (src/shell), so no graphics driver is loaded.
+egui = { version = "0.37.0", features = ["default_fonts"] }
+egui-winit = { version = "0.37.0", default-features = false, features = [
+    "accesskit", "clipboard", "links", "wayland", "x11",
 ] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen", "x11"] }
+accesskit_winit = "0.34.1"
+raw-window-handle = "0.6.2"
+png = "0.18.1"
 folio_plugin = { path = "crates/folio_plugin", optional = true }
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }
@@ -32,7 +38,9 @@ zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2
 muda = "0.21.2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSSpellChecker"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSRange", "NSArray"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSRange", "NSArray", "NSDictionary", "NSValue"] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CALayer", "CATransaction", "objc2-core-foundation"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -48,9 +56,11 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Threading",
 ] }
 
-# Windows and Linux: removed adapters go to the system trash.
+# Windows and Linux: removed adapters go to the system trash, and softbuffer
+# hands the drawn pixels to the window.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 trash = "5.2.9"
+softbuffer = { version = "0.4.8", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen"] }
 
 # Linux: Hunspell dictionaries for spell checking.
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]

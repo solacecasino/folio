@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily};
+use egui::{self, Color32, FontData, FontDefinitions, FontFamily};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]

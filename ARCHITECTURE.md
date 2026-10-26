@@ -1,8 +1,9 @@
 # Folio architecture
 
-Folio is a page-based document editor in Rust, built on `eframe`/`egui` and
-drawn with OpenGL through `glow`. It runs on macOS (Apple
-Silicon), Windows and Linux (x86-64) from one codebase. This document explains
+Folio is a page-based document editor in Rust. Its interface is built with
+`egui`, its window and input come from `winit`, and its pixels are drawn by
+the CPU (section 2, "Drawing"), with no graphics driver. It runs on macOS
+(Apple Silicon and Intel), Windows and Linux (x86-64) from one codebase. This document explains
 how it is put together and why. Paths are relative to the repository root.
 
 ---
@@ -110,6 +111,8 @@ user runs `install.sh`, a desktop entry and MIME type on Linux.
 ```
 src/                     the app (one binary)
   main.rs                app state, frame loop, commands, file I/O
+  shell/                 the window: event loop, CPU drawing, screen buffer
+  alloc.rs               large allocations straight from the OS (Unix)
   editor.rs              layout, pagination, input, painting, print model
   doc.rs                 document model and .folio format
   theme.rs               themes, fonts, list and link styling
@@ -148,6 +151,36 @@ opening URLs, trash), `spell.rs` (three backends behind one API),
 `menu.rs` (native vs drawn), `links.rs` (Apple Events vs command-line
 arguments). Key bindings are written once (`cmd+s`) and mean Cmd on macOS and
 Ctrl elsewhere, so a `keys.toml` is portable.
+
+### Drawing
+
+Folio 1.x drew through eframe and the GPU (Metal, DirectX or Vulkan via
+wgpu). An empty window cost about 70 MB on a Retina Mac before any document
+was open: the graphics driver, plus two or three full-window buffers. Folio
+2 draws with the CPU instead (`src/shell`), at 37–44 MB for the whole app:
+
+- **Only what changed is drawn.** egui still describes each frame as shapes.
+  `shell/raster.rs` turns every shape into triangles on its own and
+  fingerprints them. Shapes whose fingerprint was there last frame are left
+  alone; only the 64-pixel screen tiles under shapes that appeared,
+  disappeared or changed are cleared and drawn again. Typing a letter redraws
+  a line and the caret, about 30,000 pixels and well under a millisecond. A
+  full Retina window takes 7–11 ms.
+- **One screen buffer.** On macOS the window shows an IOSurface that Folio
+  draws into directly, so neither Folio nor the window server keeps a second
+  copy. On Windows and X11, softbuffer keeps one buffer too; Wayland
+  alternates two, and the damage of the frame before is redrawn as well.
+- **Textures live once.** The text atlas (letters already drawn, capped at
+  2048 pixels wide) is shared with egui's own update rather than copied.
+- **Freed memory goes back.** macOS's allocator keeps freed large blocks,
+  which still count against the app; zooming rebuilds the atlas a few times
+  and left 100 MB of them behind. `alloc.rs` maps blocks of 1 MB or more
+  straight from the OS and unmaps them when they're freed.
+- **Nothing else changes.** Widgets, text shaping, accessibility (AccessKit),
+  typing in other languages, the clipboard and dropped files all still come
+  from egui and egui-winit; the second window (Adapters) is a real OS window.
+
+`FOLIO_FRAME_TIMES=1` prints each frame's damage and drawing time.
 
 ### Themes
 

@@ -8,7 +8,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{
+use egui::{
     self, Align as EAlign, Color32, CornerRadius, FontId, Galley, Key, Modifiers, Pos2, Rect,
     Sense, Stroke, StrokeKind, Ui, Vec2, pos2, text::CCursor, text::CharIndex, text::LayoutJob,
     text::TextFormat, vec2,

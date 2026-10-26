@@ -311,7 +311,7 @@ python3 scripts/package.py                      # build this platform's download
 ```
 
 On Linux you also need the usual windowing libraries, for example on Debian
-or Ubuntu: `sudo apt install libxkbcommon-dev libgl1-mesa-dev`. Releases are
+or Ubuntu: `sudo apt install libxkbcommon-dev`. Releases are
 built on all three platforms by [GitHub Actions](.github/workflows/release.yml)
 when a version tag is pushed. How Folio is built, and why:
 [ARCHITECTURE.md](ARCHITECTURE.md).

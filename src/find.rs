@@ -1,6 +1,6 @@
 //! The find & replace bar: hidden until Cmd+F, a slim strip above the page.
 
-use eframe::egui::{self, Key, Margin, RichText, Ui};
+use egui::{self, Key, Margin, RichText, Ui};
 
 use crate::doc::{Document, Pos};
 use crate::theme::{Theme, color};

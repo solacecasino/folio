@@ -89,7 +89,6 @@ mod enabled {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use eframe::egui;
     use folio_plugin::{
         DocumentSnapshot, Edit, Event, PluginError, PluginOutput, PluginRuntime, Position, RuntimeConfig, Selection,
     };
@@ -357,7 +356,7 @@ mod enabled {
 mod disabled {
     use std::path::Path;
 
-    use eframe::egui;
+    use egui;
 
     use super::{Described, Effect, PanelLine, PluginCommand};
     use crate::editor::Editor;
@@ -447,7 +446,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut plugins = Plugins::start_in(&eframe::egui::Context::default(), dir.clone());
+        let mut plugins = Plugins::start_in(&egui::Context::default(), dir.clone());
         let editor = Editor::new(Document::default());
         let mut effects = Vec::new();
         fn until(plugins: &mut Plugins, editor: &Editor, effects: &mut Vec<Effect>, done: &dyn Fn(&[Effect]) -> bool) {

@@ -82,8 +82,8 @@ pub struct Window {
 impl Window {
     /// Draws the window; returns false when it was closed. `debug_info`
     /// describes this Folio for bug reports (Copy Debug Info).
-    pub fn show(&mut self, ctx: &eframe::egui::Context, debug_info: &dyn Fn() -> String) -> bool {
-        use eframe::egui::{self, Color32, RichText};
+    pub fn show(&mut self, ctx: &egui::Context, debug_info: &dyn Fn() -> String) -> bool {
+        use egui::{self, Color32, RichText};
         let mut open = true;
         let lines = lines();
         let mut sources: Vec<String> = lines.iter().map(|l| l.source.clone()).collect();

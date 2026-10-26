@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{Color32, FontDefinitions};
+use egui::{Color32, FontDefinitions};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -140,7 +140,7 @@ pub fn font_for(preferred: Option<&std::path::Path>, c: char) -> Option<PathBuf>
     static CHAIN: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
     let chain = CHAIN.get_or_init(|| {
         let defs = FontDefinitions::default();
-        let names = defs.families.get(&eframe::egui::FontFamily::Proportional).cloned().unwrap_or_default();
+        let names = defs.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
         let mut chain: Vec<PathBuf> = names.iter().filter_map(|name| builtin_font(name).ok()).collect();
         chain.extend(crate::theme::symbol_fonts());
         chain
@@ -185,7 +185,7 @@ mod tests {
     fn missing_characters_fall_back_to_a_font_that_has_them() {
         // Georgia, or whatever serif the system has, has letters but no arrows.
         let theme: crate::theme::Theme = toml::from_str(crate::theme::DEFAULT_THEME).unwrap();
-        let ctx = eframe::egui::Context::default();
+        let ctx = egui::Context::default();
         let fonts = crate::theme::install_fonts(&ctx, std::slice::from_ref(&theme));
         let (serif, _) = fonts.file(&format!("{}:serif", theme.name), false, false);
         let Some(serif) = serif else { return }; // no system serif on this machine

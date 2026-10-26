@@ -7,6 +7,8 @@
 
 mod adapter_window;
 mod adapters;
+#[cfg(unix)]
+mod alloc;
 mod clipboard;
 mod dialog;
 mod doc;
@@ -23,6 +25,7 @@ mod platform;
 mod plugins;
 mod safety;
 mod settings;
+mod shell;
 mod spell;
 mod state;
 mod theme;
@@ -31,7 +34,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use eframe::egui::{self, Align2, FontId, Sense, SystemTheme, ViewportCommand};
+use egui::{self, Align2, FontId, Sense, SystemTheme, ViewportCommand};
 use rfd::{FileDialog, MessageButtons, MessageDialogResult};
 use serde_json::{Value, json};
 
@@ -134,12 +137,12 @@ struct Folio {
 }
 
 impl Folio {
-    fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>, icon: egui::IconData, state: state::State) -> Self {
+    fn new(egui_ctx: &egui::Context, path: Option<PathBuf>, icon: egui::IconData, state: state::State) -> Self {
         settings::write_examples();
-        links::install(&cc.egui_ctx);
-        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        links::install(egui_ctx);
+        egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
 
-        let ctx = cc.egui_ctx.clone();
+        let ctx = egui_ctx.clone();
         let waker = ctx.clone();
         let host = Host::new(
             adapters::discover(),
@@ -188,7 +191,7 @@ impl Folio {
             error: None,
             menu: None,
             adapters: host,
-            plugins: plugins::Plugins::start(&cc.egui_ctx),
+            plugins: plugins::Plugins::start(egui_ctx),
             plugin_edit: None,
             state,
             window_moved: None,
@@ -1512,17 +1515,16 @@ impl Folio {
     }
 }
 
-impl eframe::App for Folio {
-    /// Caps egui's textures at about 2048 pixels a side. egui sizes its text
-    /// texture (every letter drawn, at every size) to the widest the GPU
-    /// allows, 16384 on a Mac, so each row of letters cost 64 KB and zooming
-    /// in and out a few times took Folio from 70 MB to over 300. At 2048 the
-    /// texture tops out at 16 MB, and egui clears it when it's nearly full.
+impl shell::App for Folio {
+    /// Caps egui's textures at about 2048 pixels a side (see
+    /// `trim_text_texture` for why it's sometimes 2047). The text texture
+    /// holds every letter drawn, at every size, and tops out at 16 MB; egui
+    /// clears it when it's nearly full.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         raw_input.max_texture_side = Some(raw_input.max_texture_side.unwrap_or(self.texture_side).min(self.texture_side));
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
         if let Some(fonts) = self.next_fonts.take() {
@@ -1686,10 +1688,14 @@ fn local_date_time() -> (String, String) {
     (format!("{:04}-{:02}-{:02}", t.year, t.month, t.day), format!("{:02}:{:02}", t.hour, t.minute))
 }
 
+#[cfg(unix)]
+#[global_allocator]
+static ALLOCATOR: alloc::Allocator = alloc::Allocator;
+
 const GUIDE_URL: &str = "https://github.com/solacecasino/folio#readme";
 const REPORT_URL: &str = "https://github.com/solacecasino/folio/issues/new?template=bug.yml";
 
-fn main() -> eframe::Result {
+fn main() -> Result<(), String> {
     if std::env::args().nth(1).as_deref() == Some("--version") {
         // Release builds on Windows have no console of their own; print to
         // the terminal Folio was started from. (Redirected output already works.)
@@ -1718,34 +1724,20 @@ fn main() -> eframe::Result {
         }
         arg => arg.map(PathBuf::from),
     };
-    let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG");
+    let icon = shell::icon_from_png(ICON_PNG).expect("bundled icon is a valid PNG");
     let state = state::State::load();
     let mut viewport = egui::ViewportBuilder::default()
-        // eframe also uses the starting title as the app menu's name.
         .with_title("Folio")
+        .with_app_id("folio")
         .with_icon(icon.clone())
         .with_inner_size([1000.0, 1100.0]);
     if let Some(w) = state.window {
         viewport = viewport.with_inner_size([w.width, w.height]).with_position([w.x, w.y]);
     }
-    let options = eframe::NativeOptions {
-        viewport: viewport
-            // Draw under a transparent titlebar so the theme colors the whole window.
-            .with_fullsize_content_view(true)
-            .with_titlebar_shown(false)
-            .with_title_shown(false),
-        // At most two screen buffers: eframe's default allows three, and a
-        // full-window buffer is over 10 MB on a Retina screen. An editor
-        // gains nothing from a third (typing even shows a frame sooner).
-        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-            surface: eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Folio",
-        options,
-        Box::new(move |cc| Ok(Box::new(Folio::new(cc, path, icon, state)))),
-    )
+    let viewport = viewport
+        // Draw under a transparent titlebar so the theme colors the whole window.
+        .with_fullsize_content_view(true)
+        .with_titlebar_shown(false)
+        .with_title_shown(false);
+    shell::run(viewport, move |ctx| Folio::new(ctx, path, icon, state))
 }

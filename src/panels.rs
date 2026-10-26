@@ -3,7 +3,7 @@
 //! `[[panels]]` entries in settings.toml; moving or resizing one here writes
 //! the change back there.
 
-use eframe::egui::{self, Margin, RichText, Ui};
+use egui::{self, Margin, RichText, Ui};
 
 use crate::adapters::Host;
 use crate::doc::Document;

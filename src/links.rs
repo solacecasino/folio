@@ -47,7 +47,7 @@ impl Incoming {
 }
 
 static PENDING: Mutex<Vec<Incoming>> = Mutex::new(Vec::new());
-static CTX: std::sync::OnceLock<eframe::egui::Context> = std::sync::OnceLock::new();
+static CTX: std::sync::OnceLock<egui::Context> = std::sync::OnceLock::new();
 
 /// Queues something to open and wakes the app.
 pub fn deliver(item: Incoming) {
@@ -75,7 +75,7 @@ pub fn listen_early() {
 /// Starts listening (macOS, again, in case starting the app replaced the
 /// early handlers) and keeps the system's file and link associations
 /// pointing at this copy of Folio (Windows).
-pub fn install(ctx: &eframe::egui::Context) {
+pub fn install(ctx: &egui::Context) {
     let _ = CTX.set(ctx.clone());
     #[cfg(target_os = "macos")]
     mac::listen();

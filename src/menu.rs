@@ -210,7 +210,6 @@ mod native {
     use std::sync::Mutex;
     use std::sync::mpsc::{Receiver, Sender, channel};
 
-    use eframe::egui;
     use muda::{
         AboutMetadataBuilder, Icon, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
         accelerator::Accelerator,
@@ -328,7 +327,7 @@ mod native {
 
 #[cfg(not(target_os = "macos"))]
 mod drawn {
-    use eframe::egui::{self, RichText};
+    use egui::{self, RichText};
 
     use super::{Entry, MenuContent, sections};
     use crate::keys::Command;
