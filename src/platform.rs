@@ -241,6 +241,48 @@ pub fn font_dirs() -> Vec<PathBuf> {
 
 /// `text` with the home folder written as `~`, so a pasted path doesn't
 /// give away someone's user name.
+/// Folio's memory as the system's own monitor shows it, in bytes, with the
+/// peak where the system keeps one: Activity Monitor's "Memory" on macOS,
+/// Task Manager's "Memory" (private working set) on Windows, and the
+/// resident size on Linux.
+pub fn memory_use() -> Option<(u64, Option<u64>)> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut info = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
+        // SAFETY: the buffer is a zeroed rusage_info_v4, the size flavor 4 fills.
+        let ok = unsafe {
+            libc::proc_pid_rusage(std::process::id() as i32, libc::RUSAGE_INFO_V4, info.as_mut_ptr().cast()) == 0
+        };
+        // SAFETY: filled in when the call succeeds.
+        let info = unsafe { info.assume_init() };
+        ok.then_some((info.ri_phys_footprint, Some(info.ri_lifetime_max_phys_footprint)))
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX2};
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        let mut c = PROCESS_MEMORY_COUNTERS_EX2 { cb: size_of::<PROCESS_MEMORY_COUNTERS_EX2>() as u32, ..Default::default() };
+        // SAFETY: c is a PROCESS_MEMORY_COUNTERS_EX2 and cb says so; the
+        // pseudo handle for this process needs no closing.
+        let ok = unsafe {
+            K32GetProcessMemoryInfo(GetCurrentProcess(), (&raw mut c).cast::<PROCESS_MEMORY_COUNTERS>(), c.cb).as_bool()
+        };
+        ok.then_some((c.PrivateWorkingSetSize as u64, Some(c.PeakWorkingSetSize as u64)))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let kb = |key: &str| {
+            status
+                .lines()
+                .find_map(|l| l.strip_prefix(key))
+                .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
+                .map(|k| k * 1024)
+        };
+        Some((kb("VmRSS:")?, kb("VmHWM:")))
+    }
+}
+
 pub fn hide_home(text: &str) -> String {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
     match home.map(|h| h.to_string_lossy().trim_end_matches(['/', '\\']).to_owned()) {
@@ -251,6 +293,13 @@ pub fn hide_home(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn memory_use_is_read() {
+        let (now, peak) = super::memory_use().expect("every platform reports memory");
+        assert!(now > 1 << 20, "{now}");
+        assert!(peak.is_none_or(|p| p >= now / 2), "{peak:?}");
+    }
+
     use super::*;
 
     #[test]

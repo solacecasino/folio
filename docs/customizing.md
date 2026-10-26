@@ -119,6 +119,12 @@ end)
 folio.register_command("shout", function()
   folio.set_text(folio.get_text():upper())
 end)
+
+-- Wrap the selection in quotes.
+folio.register_command("quote", function()
+  local _, _, text = folio.get_selection()
+  folio.insert_text("“" .. text .. "”")
+end)
 ```
 
 Then bind them in `keys.toml`:
@@ -126,6 +132,7 @@ Then bind them in `keys.toml`:
 ```toml
 "cmd+shift+d" = "lua date"
 "cmd+shift+u" = "lua shout"
+"cmd+shift+q" = "lua quote"
 ```
 
 | Function | Does |
@@ -134,6 +141,8 @@ Then bind them in `keys.toml`:
 | `folio.set_text(text)` | Replaces all of it; `\n` starts a new paragraph |
 | `folio.get_cursor()` | Where the caret is: the number of characters before it, counting each paragraph break as one (0 is the start) |
 | `folio.set_cursor(index)` | Moves the caret there (past the end means the end) |
+| `folio.get_selection()` | The selection's start, end and text (start and end are equal, and the text empty, when nothing is selected) |
+| `folio.set_selection(from, to)` | Selects from `from` to `to`, with the caret at `to`; `set_selection(i)` selects nothing and puts the caret at `i` |
 | `folio.insert_text(text)` | Types `text` at the caret, replacing any selection |
 | `folio.register_command(name, function)` | Adds a command `lua <name>` for `keys.toml` |
 

@@ -13,7 +13,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use egui::{ViewportBuilder, ViewportCommand, ViewportId, ViewportIdPair, ViewportInfo, ViewportOutput};
 use egui_winit::ActionRequested;
@@ -91,6 +91,10 @@ struct Shared {
     repaint_at: HashMap<ViewportId, Instant>,
     /// The main window asked to close and nothing canceled it.
     close: bool,
+    /// When the main window last started a frame, and the screen's refresh
+    /// interval.
+    last_frame: Instant,
+    frame_interval: Duration,
 }
 
 struct Viewport {
@@ -162,6 +166,10 @@ impl<A: App> ApplicationHandler<UserEvent> for Runner<A> {
                 if current != pass && current != pass + 1 {
                     return;
                 }
+                // Animations ask for the next frame at once. A GPU waits for
+                // the screen between frames; without one, they'd run as fast
+                // as the processor allows, so they're paced to the screen.
+                let when = when.max(shared.last_frame + shared.frame_interval);
                 let at = shared.repaint_at.entry(viewport).or_insert(when);
                 *at = (*at).min(when);
             }
@@ -268,6 +276,8 @@ impl<A: App> Runner<A> {
             textures: Textures::default(),
             repaint_at: HashMap::from([(ViewportId::ROOT, Instant::now())]),
             close: false,
+            last_frame: Instant::now(),
+            frame_interval: frame_interval(&window),
         }));
         let weak: Weak<RefCell<Shared>> = Rc::downgrade(&shared);
         egui::Context::set_immediate_viewport_renderer(move |_ctx, viewport| {
@@ -278,6 +288,12 @@ impl<A: App> Runner<A> {
         self.running = Some(Running { app, shared });
         Ok(())
     }
+}
+
+/// How long the window's screen shows each frame (60 Hz if it won't say).
+fn frame_interval(window: &Window) -> Duration {
+    let millihertz = window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).filter(|&mhz| mhz >= 10_000);
+    Duration::from_secs_f64(1000.0 / millihertz.unwrap_or(60_000) as f64)
 }
 
 fn new_input(ctx: &egui::Context, id: ViewportId, event_loop: &ActiveEventLoop, window: &Window) -> egui_winit::State {
@@ -298,6 +314,7 @@ impl<A: App> Running<A> {
         let ctx = shared.ctx.clone();
         let Some(viewport) = shared.viewports.get_mut(&id) else { return };
         let parent = viewport.ids.parent;
+        let mut shared_interval = None;
 
         match &event {
             WindowEvent::RedrawRequested => {
@@ -314,13 +331,24 @@ impl<A: App> Running<A> {
                 ctx.request_repaint_of(id);
                 ctx.request_repaint_of(parent);
             }
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } | WindowEvent::Moved(_) => {
                 if let Some(w) = &viewport.window {
-                    w.request_redraw();
+                    if id == ViewportId::ROOT {
+                        // It may be on another screen now.
+                        let interval = frame_interval(w);
+                        shared_interval = Some(interval);
+                    }
+                    if !matches!(event, WindowEvent::Moved(_)) {
+                        w.request_redraw();
+                    }
                 }
             }
             _ => {}
         }
+        if let Some(interval) = shared_interval.take() {
+            shared.frame_interval = interval;
+        }
+        let Some(viewport) = shared.viewports.get_mut(&id) else { return };
         let (Some(window), Some(input)) = (&viewport.window, &mut viewport.input) else { return };
         let response = input.on_window_event(window, &event);
         if response.repaint {
@@ -336,6 +364,7 @@ impl<A: App> Running<A> {
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let (ctx, raw_input) = {
             let mut shared = self.shared.borrow_mut();
+            shared.last_frame = Instant::now();
             let Shared { ctx, viewports, start, .. } = &mut *shared;
             let ctx = ctx.clone();
             let infos: egui::ViewportIdMap<ViewportInfo> = {

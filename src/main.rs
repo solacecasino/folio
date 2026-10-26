@@ -274,7 +274,8 @@ impl Folio {
         self.config_problems = problems;
         self.rebuild_keys();
         // init.lua runs at startup, on Reload Config, and when it's saved.
-        self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme]);
+        let loaded = self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme]);
+        self.lua_result(loaded);
     }
 
     /// Loads only the current theme's fonts: each theme's fonts take a few
@@ -638,9 +639,8 @@ impl Folio {
                 }
             }
             Command::Lua(name) => {
-                if let Err(e) = self.scripts.run(&name, &mut self.editor, &self.themes[self.theme]) {
-                    self.error = Some(format!("{} (Help → Log has the details)", e.lines().next().unwrap_or_default()));
-                }
+                let ran = self.scripts.run(&name, &mut self.editor, &self.themes[self.theme]);
+                self.lua_result(ran);
                 self.editor.reset_caret(now);
             }
             Command::OpenFile(path) => {
@@ -648,6 +648,15 @@ impl Folio {
                     self.open_path(path);
                 }
             }
+        }
+    }
+
+    /// Shows a Lua error in the status line. The full error is already in
+    /// the Log (scripts.rs logs it), so it isn't logged a second time.
+    fn lua_result(&mut self, result: Result<(), String>) {
+        if let Err(e) = result {
+            self.error = Some(format!("Lua: {} (Help → Log has the details)", e.lines().next().unwrap_or_default()));
+            self.logged_error = self.error.clone();
         }
     }
 
@@ -755,7 +764,8 @@ impl Folio {
             Builtin::ReloadConfig => {
                 self.plugins.reload();
                 self.load_config(false);
-                self.scripts.load(&mut self.editor, &self.themes[self.theme]);
+                let loaded = self.scripts.load(&mut self.editor, &self.themes[self.theme]);
+                self.lua_result(loaded);
                 self.watch.forget_own_writes();
                 self.notice = Some(("Config reloaded".into(), now));
             }
@@ -1199,6 +1209,18 @@ impl Folio {
             format!("Config folder: {}", settings::config_dir().display()),
             format!("Theme: {}", self.theme().name),
         ];
+        let mb = |b: u64| format!("{:.0} MB", b as f64 / 1_048_576.0);
+        if let Some((now, peak)) = platform::memory_use() {
+            let peak = peak.map(|p| format!(" (most so far: {})", mb(p))).unwrap_or_default();
+            out.push(format!("Memory: {}{peak}", mb(now)));
+        }
+        let (size, ppp) = self.ctx.input(|i| (i.viewport_rect().size(), i.pixels_per_point));
+        out.push(format!(
+            "Window: {:.0}x{:.0} pixels at {ppp}x, zoom {:.0}%",
+            size.x * ppp,
+            size.y * ppp,
+            self.editor.zoom * 100.0
+        ));
         let adapters: Vec<String> = self
             .adapters
             .installed()

@@ -42,52 +42,53 @@ pub struct Scripts {
 impl Scripts {
     /// Runs init.lua again if it changed (or appeared, or went away) since
     /// it last ran.
-    pub fn reload_if_changed(&mut self, editor: &mut Editor, theme: &Theme) {
+    pub fn reload_if_changed(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
         let modified = std::fs::metadata(init_path()).and_then(|m| m.modified()).ok();
-        if modified != self.loaded {
-            self.load(editor, theme);
+        if modified == self.loaded {
+            return Ok(());
         }
+        self.load(editor, theme)
     }
 
-    /// Starts a fresh Lua state and runs init.lua, if there is one.
-    pub fn load(&mut self, editor: &mut Editor, theme: &Theme) {
+    /// Starts a fresh Lua state and runs init.lua, if there is one. An error
+    /// is logged (once, here) and returned for the status line.
+    pub fn load(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
+        let result = self.start(editor, theme);
+        if let Err(e) = &result {
+            log::push("Lua", log::Level::Error, e.clone());
+        }
+        result
+    }
+
+    fn start(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
         self.lua = None;
         self.commands.borrow_mut().clear();
         let path = init_path();
         self.loaded = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         let source = match std::fs::read_to_string(&path) {
             Ok(source) => source,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-            Err(e) => {
-                log::push("Lua", log::Level::Error, format!("Couldn't read {}: {e}", path.display()));
-                return;
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(format!("Couldn't read {}: {e}", path.display())),
         };
-        let lua = match self.sandbox() {
-            Ok(lua) => lua,
-            Err(e) => {
-                log::push("Lua", log::Level::Error, format!("Couldn't start Lua: {e}"));
-                return;
-            }
-        };
+        let lua = self.sandbox().map_err(|e| format!("Couldn't start Lua: {e}"))?;
         let chunk = lua.load(source).set_name("@init.lua");
         let result = self.with_api(&lua, editor, theme, |_| chunk.exec());
-        match result {
-            Ok(()) => {
-                let names: Vec<String> = self.commands.borrow().keys().cloned().collect();
-                let detail = if names.is_empty() { String::new() } else { format!(" (commands: {})", names.join(", ")) };
-                log::push("Lua", log::Level::Info, format!("Ran init.lua{detail}"));
-            }
-            Err(e) => log::push("Lua", log::Level::Error, describe(&e)),
-        }
         // Commands registered before an error still work.
         self.lua = Some(lua);
+        result.map_err(|e| describe(&e))?;
+        let names = self.names();
+        let detail = if names.is_empty() { String::new() } else { format!(" (commands: {})", names.join(", ")) };
+        log::push("Lua", log::Level::Info, format!("Ran init.lua{detail}"));
+        Ok(())
     }
 
-    /// Runs a registered command. Errors are logged and returned.
+    /// Runs a registered command. An error is logged (once, here) and
+    /// returned for the status line.
     pub fn run(&mut self, name: &str, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
         let Some(lua) = self.lua.take() else {
-            return Err(format!("No Lua command \"{name}\": there's no init.lua, or it didn't load"));
+            let e = format!("No Lua command \"{name}\": there's no init.lua, or it didn't load");
+            log::push("Lua", log::Level::Error, e.clone());
+            return Err(e);
         };
         let function = {
             let commands = self.commands.borrow();
@@ -199,6 +200,25 @@ impl Scripts {
                 })?,
             )?;
             folio.set(
+                "get_selection",
+                scope.create_function(|_, ()| {
+                    let ed = editor.borrow();
+                    let (a, b) = (ed.doc.index_of(ed.anchor()), ed.doc.index_of(ed.cursor()));
+                    let text = ed.selected_text().unwrap_or_default();
+                    Ok((a.min(b), a.max(b), text))
+                })?,
+            )?;
+            folio.set(
+                "set_selection",
+                scope.create_function(|_, (from, to): (i64, Option<i64>)| {
+                    let mut ed = editor.borrow_mut();
+                    let from = ed.doc.pos_at(from.max(0) as usize);
+                    let to = to.map_or(from, |to| ed.doc.pos_at(to.max(0) as usize));
+                    ed.select(from, to);
+                    Ok(())
+                })?,
+            )?;
+            folio.set(
                 "insert_text",
                 scope.create_function(|_, text: String| {
                     editor.borrow_mut().insert_at_cursor(&text, theme);
@@ -279,6 +299,30 @@ mod tests {
         run(r#"folio.set_text("fresh") folio.set_cursor(99)"#, &mut ed).unwrap();
         assert_eq!(ed.doc.plain_text(), "fresh");
         assert_eq!(ed.cursor(), Pos::new(0, 5));
+    }
+
+    #[test]
+    fn selections_are_read_and_set() {
+        let mut ed = editor("héllo\nworld");
+        run(
+            r#"
+            local a, b, text = folio.get_selection()
+            assert(a == b and text == "", "nothing selected yet")
+            folio.set_selection(9, 3)
+            a, b, text = folio.get_selection()
+            assert(a == 3 and b == 9, a .. " " .. b)
+            assert(text == "lo\nwor", text)
+            assert(folio.get_cursor() == 3, "the caret is at the second index")
+            folio.set_selection(1, 5)
+            folio.insert_text("ELLO")
+            assert(folio.get_text() == "hELLO\nworld", folio.get_text())
+            folio.set_selection(2)
+            a, b = folio.get_selection()
+            assert(a == 2 and b == 2)
+            "#,
+            &mut ed,
+        )
+        .unwrap();
     }
 
     #[test]
