@@ -6,6 +6,7 @@ Folio has no settings window. Everything is a text file in one folder:
 Folio/
 ├── settings.toml     how Folio behaves and what's on screen
 ├── keys.toml         every keyboard shortcut
+├── init.lua          your own commands, in Lua (optional)
 ├── themes/           how documents look
 └── adapters/         add-ons you chose to install
 ```
@@ -96,9 +97,55 @@ menus show your shortcuts. `Cmd+/` lists every current binding.
 | `report-problem` | Help → Report a Problem…: copies debug info and opens the problem form |
 | `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
+| `lua <name>` | Run a command your `init.lua` registered |
 
 Themes add default `cmd+<digit>` shortcuts for styles with `key = <digit>`,
 and adapters add the `keys` in their manifest. Your `keys.toml` overrides both.
+
+## init.lua
+
+Put an `init.lua` in the folder to add commands of your own, written in
+[Lua 5.4](https://www.lua.org/manual/5.4/). Folio runs it once when it
+starts, again whenever you save it, and on **Reload Config** (`Cmd+Shift+R`).
+Without the file, Folio doesn't start Lua at all.
+
+```lua
+-- Insert today's date where the caret is.
+folio.register_command("date", function()
+  folio.insert_text(os.date("%Y-%m-%d"))
+end)
+
+-- Make the whole document upper case.
+folio.register_command("shout", function()
+  folio.set_text(folio.get_text():upper())
+end)
+```
+
+Then bind them in `keys.toml`:
+
+```toml
+"cmd+shift+d" = "lua date"
+"cmd+shift+u" = "lua shout"
+```
+
+| Function | Does |
+|---|---|
+| `folio.get_text()` | The document's text, paragraphs separated by `\n` |
+| `folio.set_text(text)` | Replaces all of it; `\n` starts a new paragraph |
+| `folio.get_cursor()` | Where the caret is: the number of characters before it, counting each paragraph break as one (0 is the start) |
+| `folio.set_cursor(index)` | Moves the caret there (past the end means the end) |
+| `folio.insert_text(text)` | Types `text` at the caret, replacing any selection |
+| `folio.register_command(name, function)` | Adds a command `lua <name>` for `keys.toml` |
+
+Each command is one step for Undo. `print(...)` writes to **Help → Log**
+(`Cmd+Alt+L`), and so does every error, with the line it happened on; a
+broken script never stops Folio.
+
+Scripts can't touch your files, run programs or use the network: they get
+Lua's `string`, `table`, `math`, `utf8` and `coroutine` libraries and the clock
+(`os.time`, `os.clock`, `os.date`, `os.difftime`), and nothing else. A
+command that runs longer than a second is stopped, and scripts share 32 MB
+of memory.
 
 ## The formatting language
 

@@ -1,6 +1,6 @@
 [package]
 name = "folio"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
 description = "A document editor that ships bare and is endlessly customizable through themes and adapters."
 license = "MIT"
@@ -14,6 +14,8 @@ wasi-plugins = ["dep:folio_plugin"]
 
 [dependencies]
 memmap2 = "0.9.12"
+# init.lua scripting. Lua 5.4 is compiled in, so nothing extra is needed to run Folio.
+mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
 # The interface (egui), the window and input (winit, egui-winit), and the
 # pixels: drawn by the CPU (src/shell), so no graphics driver is loaded.
 egui = { version = "0.37.0", features = ["default_fonts"] }

@@ -457,6 +457,22 @@ impl Editor {
         Ok(true)
     }
 
+    /// Moves the caret (dropping any selection) and scrolls to it.
+    pub fn move_caret(&mut self, p: Pos) {
+        self.set_cursor(p, false);
+        self.goal_x = None;
+    }
+
+    /// Replaces all the text, as one undo step. Paragraph styles are kept
+    /// where paragraphs remain.
+    pub fn set_text(&mut self, text: &str, theme: &Theme) {
+        let end = self.doc.end();
+        if self.doc.plain_text() == text {
+            return;
+        }
+        self.replace_ranges(&[(Pos::default(), end)], text, theme);
+    }
+
     pub fn anchor(&self) -> Pos {
         self.anchor
     }

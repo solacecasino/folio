@@ -24,6 +24,7 @@ mod pdf;
 mod platform;
 mod plugins;
 mod safety;
+mod scripts;
 mod settings;
 mod shell;
 mod spell;
@@ -124,6 +125,7 @@ struct Folio {
     window_fitted: bool,
     /// WebAssembly plugins (nothing in folio-lite).
     plugins: plugins::Plugins,
+    scripts: scripts::Scripts,
     /// The last plugin edit applied: (revision it was made against, the
     /// revision after applying it), so a plugin's several inserts from one
     /// event all apply.
@@ -192,6 +194,7 @@ impl Folio {
             menu: None,
             adapters: host,
             plugins: plugins::Plugins::start(egui_ctx),
+            scripts: scripts::Scripts::default(),
             plugin_edit: None,
             state,
             window_moved: None,
@@ -270,6 +273,8 @@ impl Folio {
         self.user_keys = user_keys;
         self.config_problems = problems;
         self.rebuild_keys();
+        // init.lua runs at startup, on Reload Config, and when it's saved.
+        self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme]);
     }
 
     /// Loads only the current theme's fonts: each theme's fonts take a few
@@ -632,6 +637,12 @@ impl Folio {
                     self.error = Some(e);
                 }
             }
+            Command::Lua(name) => {
+                if let Err(e) = self.scripts.run(&name, &mut self.editor, &self.themes[self.theme]) {
+                    self.error = Some(format!("{} (Help → Log has the details)", e.lines().next().unwrap_or_default()));
+                }
+                self.editor.reset_caret(now);
+            }
             Command::OpenFile(path) => {
                 if self.confirm_discard() {
                     self.open_path(path);
@@ -744,6 +755,7 @@ impl Folio {
             Builtin::ReloadConfig => {
                 self.plugins.reload();
                 self.load_config(false);
+                self.scripts.load(&mut self.editor, &self.themes[self.theme]);
                 self.watch.forget_own_writes();
                 self.notice = Some(("Config reloaded".into(), now));
             }

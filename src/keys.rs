@@ -87,6 +87,8 @@ pub enum Command {
     Adapter(String, String),
     /// Run a WebAssembly plugin's command: plugin name, command id.
     Plugin(String, String),
+    /// Run a command registered by init.lua.
+    Lua(String),
     /// Open this document (File → Open Recent). Not bindable in keys.toml.
     OpenFile(std::path::PathBuf),
 }
@@ -97,6 +99,7 @@ impl Command {
             Command::Builtin(b) => entry(*b).2.to_owned(),
             Command::Style(s) => s.clone(),
             Command::Adapter(_, id) | Command::Plugin(_, id) => id.clone(),
+            Command::Lua(name) => name.clone(),
             Command::OpenFile(p) => p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
         }
     }
@@ -113,6 +116,7 @@ impl fmt::Display for Command {
             Command::Style(s) => write!(f, "style {s}"),
             Command::Adapter(name, id) => write!(f, "adapter \"{name}\" {id}"),
             Command::Plugin(name, id) => write!(f, "plugin \"{name}\" {id}"),
+            Command::Lua(name) => write!(f, "lua {name}"),
             Command::OpenFile(p) => write!(f, "open {}", p.display()),
         }
     }
@@ -126,6 +130,9 @@ pub fn parse_command(s: &str) -> Result<Option<Command>, String> {
     }
     if let Some(style) = s.strip_prefix("style ") {
         return Ok(Some(Command::Style(style.trim().to_owned())));
+    }
+    if let Some(name) = s.strip_prefix("lua ") {
+        return Ok(Some(Command::Lua(name.trim().to_owned())));
     }
     // "component" is the older name for adapters and still works.
     for (prefix, kind) in [("adapter ", "adapter"), ("component ", "adapter"), ("plugin ", "plugin")] {

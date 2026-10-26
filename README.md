@@ -183,6 +183,7 @@ In it:
 
 - **`settings.toml`**: theme, zoom, the status line, panels, autosave and history. It explains every option inside itself.
 - **`keys.toml`**: every shortcut, all changeable.
+- **`init.lua`** (optional): your own commands, written in Lua, that you can bind to keys. See [docs/customizing.md](docs/customizing.md#initlua).
 - **`themes/`**: your own themes.
 - **`adapters/`** and **`plugins/`**: the add-ons you've installed.
 

@@ -298,7 +298,7 @@ const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lin
 # Commands: new, open, save, save-as, quit, undo, redo, select-all, bold,
 # italic, underline, next-theme, zoom-in, zoom-out, zoom-reset, toggle-status,
 # toggle-panels, help, reload-config, open-config-folder,
-# style <name>, adapter "<Name>" <command-id>
+# style <name>, adapter "<Name>" <command-id>, lua <name> (from init.lua)
 
 # "cmd+shift+h" = "style h2"
 # "cmd+t" = "none"
@@ -322,7 +322,7 @@ impl Watch {
     }
 
     fn scan(&self) -> BTreeMap<PathBuf, SystemTime> {
-        let mut files = vec![settings_path(), keys_path()];
+        let mut files = vec![settings_path(), keys_path(), crate::scripts::init_path()];
         for dir in [config_dir().join("themes"), PathBuf::from("themes")] {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 files.extend(entries.flatten().map(|e| e.path()));

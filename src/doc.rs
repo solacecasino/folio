@@ -142,6 +142,30 @@ impl Document {
         Pos::new(last, self.paragraphs[last].len())
     }
 
+    /// Characters before `p` in [`Self::plain_text`] (a paragraph break
+    /// counts as one, the newline).
+    pub fn index_of(&self, p: Pos) -> usize {
+        let p = self.clamp(p);
+        self.paragraphs[..p.para].iter().map(|para| para.len() + 1).sum::<usize>() + p.ch
+    }
+
+    /// The position `index` characters into [`Self::plain_text`], clamped to
+    /// the end.
+    pub fn pos_at(&self, mut index: usize) -> Pos {
+        for (i, para) in self.paragraphs.iter().enumerate() {
+            if index <= para.len() {
+                return Pos::new(i, index);
+            }
+            index -= para.len() + 1;
+        }
+        self.end()
+    }
+
+    /// The whole document as text, paragraphs separated by newlines.
+    pub fn plain_text(&self) -> String {
+        self.text(Pos::default(), self.end())
+    }
+
     pub fn clamp(&self, p: Pos) -> Pos {
         let para = p.para.min(self.paragraphs.len() - 1);
         Pos::new(para, p.ch.min(self.paragraphs[para].len()))
