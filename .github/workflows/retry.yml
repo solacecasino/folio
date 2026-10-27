@@ -1,0 +1,32 @@
+# GitHub sometimes cancels a job when it runs short of machines (macOS most
+# often), which fails the whole run although nothing was wrong. When a run
+# fails only because jobs were cancelled, this reruns those jobs, up to twice.
+# Real failures, and runs someone cancelled by hand, are left alone.
+name: Retry
+
+on:
+  workflow_run:
+    workflows: [Release, Checks, Screenshots]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rerun jobs GitHub cancelled
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          jobs=$(gh run view "$RUN" -R "$REPO" --json jobs)
+          failed=$(echo "$jobs" | jq '[.jobs[] | select(.conclusion == "failure")] | length')
+          cancelled=$(echo "$jobs" | jq '[.jobs[] | select(.conclusion == "cancelled")] | length')
+          echo "failed: $failed, cancelled: $cancelled"
+          if [ "$failed" -eq 0 ] && [ "$cancelled" -gt 0 ]; then
+            gh run rerun "$RUN" -R "$REPO" --failed
+          fi

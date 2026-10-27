@@ -274,7 +274,7 @@ impl Folio {
         self.config_problems = problems;
         // init.lua runs at startup, on Reload Config, and when it's saved,
         // before the menus are built so they list its commands.
-        let loaded = self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme]);
+        let loaded = self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme], self.path.as_deref());
         self.lua_result(loaded);
         self.rebuild_keys();
     }
@@ -360,7 +360,7 @@ impl Folio {
                 })
                 .collect(),
             plugins: self.plugins.commands(),
-            scripts: self.scripts.names(),
+            scripts: self.scripts.menu_items(),
             recent: self.state.recent.clone(),
             keymap: &self.keymap,
         };
@@ -641,7 +641,7 @@ impl Folio {
                 }
             }
             Command::Lua(name) => {
-                let ran = self.scripts.run(&name, &mut self.editor, &self.themes[self.theme]);
+                let ran = self.scripts.run(&name, &mut self.editor, &self.themes[self.theme], self.path.as_deref());
                 self.lua_result(ran);
                 self.editor.reset_caret(now);
             }
@@ -655,7 +655,11 @@ impl Folio {
 
     /// Shows a Lua error in the status line. The full error is already in
     /// the Log (scripts.rs logs it), so it isn't logged a second time.
+    /// Also shows a script's `folio.notify` message.
     fn lua_result(&mut self, result: Result<(), String>) {
+        if let Some(text) = self.scripts.take_notice() {
+            self.notice = Some((text, self.ctx.input(|i| i.time)));
+        }
         if let Err(e) = result {
             self.error = Some(format!("Lua: {} (Help → Log has the details)", e.lines().next().unwrap_or_default()));
             self.logged_error = self.error.clone();
@@ -765,7 +769,7 @@ impl Folio {
             }
             Builtin::ReloadConfig => {
                 self.plugins.reload();
-                let loaded = self.scripts.load(&mut self.editor, &self.themes[self.theme]);
+                let loaded = self.scripts.load(&mut self.editor, &self.themes[self.theme], self.path.as_deref());
                 self.lua_result(loaded);
                 self.load_config(false);
                 self.watch.forget_own_writes();

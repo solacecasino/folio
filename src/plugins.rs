@@ -356,8 +356,6 @@ mod enabled {
 mod disabled {
     use std::path::Path;
 
-    use egui;
-
     use super::{Described, Effect, PanelLine, PluginCommand};
     use crate::editor::Editor;
 

@@ -113,10 +113,10 @@ Registered commands appear in a **Scripts** menu, and `Cmd+/` lists the ones
 that don't have a key yet.
 
 ```lua
--- Insert today's date where the caret is.
+-- Insert today's date where the caret is. The Scripts menu shows "Insert Date".
 folio.register_command("date", function()
   folio.insert_text(os.date("%Y-%m-%d"))
-end)
+end, "Insert Date")
 
 -- Make the whole document upper case.
 folio.register_command("shout", function()
@@ -147,7 +147,9 @@ Then bind them in `keys.toml`:
 | `folio.get_selection()` | The selection's start, end and text (start and end are equal, and the text empty, when nothing is selected) |
 | `folio.set_selection(from, to)` | Selects from `from` to `to`, with the caret at `to`; `set_selection(i)` selects nothing and puts the caret at `i` |
 | `folio.insert_text(text)` | Types `text` at the caret, replacing any selection |
-| `folio.register_command(name, function)` | Adds a command `lua <name>` for `keys.toml` |
+| `folio.register_command(name, function, label)` | Adds a command `lua <name>` for `keys.toml` and the Scripts menu. `label` is optional: what the menu shows instead of the name |
+| `folio.get_path()` | The document's file path, or `nil` if it hasn't been saved yet. Scripts still can't open it |
+| `folio.notify(text)` | Shows a short message in the status line (the first line, up to 200 characters) |
 
 Each command is one step for Undo. `print(...)` writes to **Help → Log**
 (`Cmd+Alt+L`), and so does every error, with the line it happened on; a

@@ -10,7 +10,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -28,11 +28,19 @@ pub fn init_path() -> PathBuf {
     crate::settings::config_dir().join("init.lua")
 }
 
+struct Registered {
+    function: RegistryKey,
+    /// What menus call it; the name when the script gave none.
+    label: Option<String>,
+}
+
 #[derive(Default)]
 pub struct Scripts {
     lua: Option<Lua>,
     /// Commands registered with `folio.register_command`, by name.
-    commands: Rc<RefCell<BTreeMap<String, RegistryKey>>>,
+    commands: Rc<RefCell<BTreeMap<String, Registered>>>,
+    /// The latest `folio.notify` message, for the status line.
+    notice: Rc<RefCell<Option<String>>>,
     /// When the current run has to stop.
     deadline: Rc<Cell<Option<Instant>>>,
     /// init.lua's modification time when it was last run.
@@ -42,37 +50,37 @@ pub struct Scripts {
 impl Scripts {
     /// Runs init.lua again if it changed (or appeared, or went away) since
     /// it last ran.
-    pub fn reload_if_changed(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
+    pub fn reload_if_changed(&mut self, editor: &mut Editor, theme: &Theme, path: Option<&Path>) -> Result<(), String> {
         let modified = std::fs::metadata(init_path()).and_then(|m| m.modified()).ok();
         if modified == self.loaded {
             return Ok(());
         }
-        self.load(editor, theme)
+        self.load(editor, theme, path)
     }
 
     /// Starts a fresh Lua state and runs init.lua, if there is one. An error
     /// is logged (once, here) and returned for the status line.
-    pub fn load(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
-        let result = self.start(editor, theme);
+    pub fn load(&mut self, editor: &mut Editor, theme: &Theme, path: Option<&Path>) -> Result<(), String> {
+        let result = self.start(editor, theme, path);
         if let Err(e) = &result {
             log::push("Lua", log::Level::Error, e.clone());
         }
         result
     }
 
-    fn start(&mut self, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
+    fn start(&mut self, editor: &mut Editor, theme: &Theme, path: Option<&Path>) -> Result<(), String> {
         self.lua = None;
         self.commands.borrow_mut().clear();
-        let path = init_path();
-        self.loaded = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-        let source = match std::fs::read_to_string(&path) {
+        let init = init_path();
+        self.loaded = std::fs::metadata(&init).and_then(|m| m.modified()).ok();
+        let source = match std::fs::read_to_string(&init) {
             Ok(source) => source,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(format!("Couldn't read {}: {e}", path.display())),
+            Err(e) => return Err(format!("Couldn't read {}: {e}", init.display())),
         };
         let lua = self.sandbox().map_err(|e| format!("Couldn't start Lua: {e}"))?;
         let chunk = lua.load(source).set_name("@init.lua");
-        let result = self.with_api(&lua, editor, theme, |_| chunk.exec());
+        let result = self.with_api(&lua, editor, theme, path, |_| chunk.exec());
         // Commands registered before an error still work.
         self.lua = Some(lua);
         result.map_err(|e| describe(&e))?;
@@ -84,7 +92,7 @@ impl Scripts {
 
     /// Runs a registered command. An error is logged (once, here) and
     /// returned for the status line.
-    pub fn run(&mut self, name: &str, editor: &mut Editor, theme: &Theme) -> Result<(), String> {
+    pub fn run(&mut self, name: &str, editor: &mut Editor, theme: &Theme, path: Option<&Path>) -> Result<(), String> {
         let Some(lua) = self.lua.take() else {
             let e = format!("No Lua command \"{name}\": there's no init.lua, or it didn't load");
             log::push("Lua", log::Level::Error, e.clone());
@@ -92,7 +100,7 @@ impl Scripts {
         };
         let function = {
             let commands = self.commands.borrow();
-            commands.get(name).map(|key| lua.registry_value::<Function>(key))
+            commands.get(name).map(|r| lua.registry_value::<Function>(&r.function))
         };
         let result = match function {
             None => Err(match self.names() {
@@ -100,7 +108,7 @@ impl Scripts {
                 names => format!("No Lua command \"{name}\" (init.lua registers: {})", names.join(", ")),
             }),
             Some(Err(e)) => Err(describe(&e)),
-            Some(Ok(f)) => self.with_api(&lua, editor, theme, |_| f.call::<()>(())).map_err(|e| describe(&e)),
+            Some(Ok(f)) => self.with_api(&lua, editor, theme, path, |_| f.call::<()>(())).map_err(|e| describe(&e)),
         };
         self.lua = Some(lua);
         if let Err(e) = &result {
@@ -111,6 +119,20 @@ impl Scripts {
 
     pub fn names(&self) -> Vec<String> {
         self.commands.borrow().keys().cloned().collect()
+    }
+
+    /// (name, label) of each command, for the Scripts menu.
+    pub fn menu_items(&self) -> Vec<(String, String)> {
+        self.commands
+            .borrow()
+            .iter()
+            .map(|(name, r)| (name.clone(), r.label.clone().unwrap_or_else(|| name.clone())))
+            .collect()
+    }
+
+    /// The latest `folio.notify` message, once.
+    pub fn take_notice(&mut self) -> Option<String> {
+        self.notice.borrow_mut().take()
     }
 
     /// A Lua state with only the safe libraries, `print` going to the Log,
@@ -166,6 +188,7 @@ impl Scripts {
         lua: &Lua,
         editor: &mut Editor,
         theme: &Theme,
+        path: Option<&Path>,
         f: impl FnOnce(&Lua) -> mlua::Result<R>,
     ) -> mlua::Result<R> {
         let editor = RefCell::new(editor);
@@ -225,15 +248,30 @@ impl Scripts {
                     Ok(())
                 })?,
             )?;
+            folio.set(
+                "get_path",
+                scope.create_function(|_, ()| Ok(path.map(|p| p.to_string_lossy().into_owned())))?,
+            )?;
+            let notice = self.notice.clone();
+            folio.set(
+                "notify",
+                lua.create_function(move |_, text: String| {
+                    // The status line is one line.
+                    let line: String = text.lines().next().unwrap_or_default().chars().take(200).collect();
+                    *notice.borrow_mut() = Some(line);
+                    Ok(())
+                })?,
+            )?;
             let commands = self.commands.clone();
             folio.set(
                 "register_command",
-                lua.create_function(move |lua, (name, f): (String, Function)| {
+                lua.create_function(move |lua, (name, f, label): (String, Function, Option<String>)| {
                     let name = name.trim().to_owned();
                     if name.is_empty() || name.contains(char::is_whitespace) {
                         return Err(mlua::Error::runtime(format!("command names can't be empty or contain spaces: \"{name}\"")));
                     }
-                    commands.borrow_mut().insert(name, lua.create_registry_value(f)?);
+                    let label = label.map(|l| l.trim().to_owned()).filter(|l| !l.is_empty());
+                    commands.borrow_mut().insert(name, Registered { function: lua.create_registry_value(f)?, label });
                     Ok(())
                 })?,
             )?;
@@ -268,7 +306,7 @@ mod tests {
         let theme = theme();
         let scripts = Scripts::default();
         let lua = scripts.sandbox()?;
-        scripts.with_api(&lua, editor, &theme, |lua| lua.load(source).exec())?;
+        scripts.with_api(&lua, editor, &theme, Some(Path::new("/notes/draft.folio")), |lua| lua.load(source).exec())?;
         let mut scripts = scripts;
         scripts.lua = Some(lua);
         Ok(scripts)
@@ -331,8 +369,35 @@ mod tests {
         let mut scripts = run(crate::settings::EXAMPLE_LUA, &mut ed).unwrap();
         assert_eq!(scripts.names(), vec!["date", "quote"]);
         ed.select(crate::doc::Pos::new(0, 4), crate::doc::Pos::new(0, 6));
-        scripts.run("quote", &mut ed, &theme()).unwrap();
+        scripts.run("quote", &mut ed, &theme(), None).unwrap();
         assert_eq!(ed.doc.plain_text(), "say “hi”");
+    }
+
+    #[test]
+    fn labels_paths_and_notices() {
+        let mut ed = editor("");
+        let mut scripts = run(
+            r#"
+            folio.register_command("date", function() end, "Insert Date")
+            folio.register_command("plain", function() end)
+            assert(folio.get_path() == "/notes/draft.folio")
+            folio.notify("Saved a copy\nsecond line is dropped")
+            "#,
+            &mut ed,
+        )
+        .unwrap();
+        assert_eq!(
+            scripts.menu_items(),
+            vec![("date".to_owned(), "Insert Date".to_owned()), ("plain".to_owned(), "plain".to_owned())]
+        );
+        assert_eq!(scripts.take_notice().as_deref(), Some("Saved a copy"));
+        assert_eq!(scripts.take_notice(), None, "a notice shows once");
+        let mut unsaved = Scripts::default();
+        let lua = unsaved.sandbox().unwrap();
+        let path: Option<String> =
+            unsaved.with_api(&lua, &mut ed, &theme(), None, |lua| lua.load("return folio.get_path()").eval()).unwrap();
+        assert_eq!(path, None, "an unsaved document has no path");
+        unsaved.lua = Some(lua);
     }
 
     #[test]
@@ -344,9 +409,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(scripts.names(), vec!["shout"]);
-        scripts.run("shout", &mut ed, &theme()).unwrap();
+        scripts.run("shout", &mut ed, &theme(), None).unwrap();
         assert_eq!(ed.doc.plain_text(), "HELLO");
-        assert!(scripts.run("missing", &mut ed, &theme()).is_err());
+        assert!(scripts.run("missing", &mut ed, &theme(), None).is_err());
     }
 
     #[test]

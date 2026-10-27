@@ -314,15 +314,20 @@ pub const EXAMPLE_LUA: &str = r#"-- Folio runs init.lua (not this file) at start
 -- Scripts can't touch files, programs or the network.
 
 -- Insert today's date where the caret is.
+-- The third argument is what the Scripts menu shows.
 folio.register_command("date", function()
   folio.insert_text(os.date("%Y-%m-%d"))
-end)
+end, "Insert Date")
 
 -- Wrap the selection in curly quotes.
 folio.register_command("quote", function()
   local _, _, text = folio.get_selection()
+  if text == "" then
+    folio.notify("Select some text to quote first")
+    return
+  end
   folio.insert_text("“" .. text .. "”")
-end)
+end, "Quote Selection")
 
 -- Commands appear in the Scripts menu. Give them keys in keys.toml:
 --   "cmd+shift+d" = "lua date"

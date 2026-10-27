@@ -23,10 +23,10 @@ jobs:
           - os: ubuntu-22.04      # an older glibc, so it runs on more distros
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -35,7 +35,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libxcb-render0-dev libxcb-shape0-dev \
-            libxcb-xfixes0-dev libgl1-mesa-dev hunspell-en-us fonts-dejavu-core
+            libxcb-xfixes0-dev hunspell-en-us fonts-dejavu-core
 
       - name: Test
         run: cargo test
@@ -76,7 +76,7 @@ jobs:
           done
           rm -rf x-* folio-*-linux-x64/ folio-lite-*-linux-x64/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: folio-${{ runner.os }}
           path: dist/*
@@ -92,8 +92,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: folio-*   # the downloads, not the screenshots

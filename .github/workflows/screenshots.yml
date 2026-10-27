@@ -12,13 +12,13 @@ jobs:
   linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev \
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libxcb-render0-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev xvfb xdotool imagemagick hunspell-en-us fonts-dejavu-core zenity openbox
       - name: Build
         run: cargo build --no-default-features
@@ -50,7 +50,7 @@ jobs:
           sleep 1; shot 3-typing
           xdotool key ctrl+Home; sleep 0.5; shot 4-ctrl-home
           xdotool key ctrl+alt+l; sleep 1; shot 5-log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: screenshots-linux
           path: shots/
@@ -58,11 +58,9 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # The runner has no real OpenGL; Mesa's software renderer stands in.
-      - uses: ssciwr/setup-mesa-dist-win@v2
       - name: Build
         run: cargo build --no-default-features
       - name: Run and take screenshots
@@ -97,7 +95,7 @@ jobs:
           Start-Sleep 1
           Shot "5-log"
           Stop-Process -Id $p.Id
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: screenshots-windows
@@ -106,7 +104,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
@@ -132,7 +130,7 @@ jobs:
           keys "key code 126 using command down"; sleep 0.5; shot 3-top
           keys "keystroke \"l\" using {command down, option down}"; sleep 1; shot 4-log
           kill $PID
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: screenshots-macos
