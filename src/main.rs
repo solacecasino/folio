@@ -272,10 +272,11 @@ impl Folio {
         self.settings = settings;
         self.user_keys = user_keys;
         self.config_problems = problems;
-        self.rebuild_keys();
-        // init.lua runs at startup, on Reload Config, and when it's saved.
+        // init.lua runs at startup, on Reload Config, and when it's saved,
+        // before the menus are built so they list its commands.
         let loaded = self.scripts.reload_if_changed(&mut self.editor, &self.themes[self.theme]);
         self.lua_result(loaded);
+        self.rebuild_keys();
     }
 
     /// Loads only the current theme's fonts: each theme's fonts take a few
@@ -359,6 +360,7 @@ impl Folio {
                 })
                 .collect(),
             plugins: self.plugins.commands(),
+            scripts: self.scripts.names(),
             recent: self.state.recent.clone(),
             keymap: &self.keymap,
         };
@@ -763,9 +765,9 @@ impl Folio {
             }
             Builtin::ReloadConfig => {
                 self.plugins.reload();
-                self.load_config(false);
                 let loaded = self.scripts.load(&mut self.editor, &self.themes[self.theme]);
                 self.lua_result(loaded);
+                self.load_config(false);
                 self.watch.forget_own_writes();
                 self.notice = Some(("Config reloaded".into(), now));
             }
@@ -1540,6 +1542,16 @@ impl Folio {
             let rows = self.keymap.describe();
             let width = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
             let mut text: String = rows.iter().map(|(k, c)| format!("{k:width$}   {c}\n")).collect();
+            let unbound: Vec<String> = self
+                .scripts
+                .names()
+                .into_iter()
+                .filter(|name| self.keymap.chord_for(&Command::Lua(name.clone())).is_none())
+                .map(|name| format!("lua {name}"))
+                .collect();
+            if !unbound.is_empty() {
+                text += &format!("\nNo key yet (Scripts menu): {}\n", unbound.join(", "));
+            }
             text += "\nRemap any of these in keys.toml (Folio → Open Config Folder)";
             let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), egui::Color32::WHITE);
             let box_rect = egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(36.0, 30.0));
@@ -1762,7 +1774,8 @@ fn main() -> Result<(), String> {
     let state = state::State::load();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Folio")
-        .with_app_id("folio")
+        // The window class Folio 1.x had: window rules and scripts match it.
+        .with_app_id("Folio")
         .with_icon(icon.clone())
         .with_inner_size([1000.0, 1100.0]);
     if let Some(w) = state.window {

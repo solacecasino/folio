@@ -237,7 +237,10 @@ pub fn write_examples() {
     let dir = config_dir();
     let _ = std::fs::create_dir_all(dir.join("themes"));
     let _ = std::fs::create_dir_all(dir.join("adapters"));
-    for (path, text) in [(settings_path(), EXAMPLE_SETTINGS), (keys_path(), EXAMPLE_KEYS)] {
+    // init.lua itself isn't written: without it Lua never starts, so the
+    // example has another name until someone renames it.
+    let lua_example = crate::scripts::init_path().with_file_name("init.lua.example");
+    for (path, text) in [(settings_path(), EXAMPLE_SETTINGS), (keys_path(), EXAMPLE_KEYS), (lua_example, EXAMPLE_LUA)] {
         if !path.exists() {
             let _ = std::fs::write(path, text);
         }
@@ -303,6 +306,27 @@ const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lin
 # "cmd+shift+h" = "style h2"
 # "cmd+t" = "none"
 # "cmd+alt+g" = 'adapter "Writing Tools" goal'
+"#;
+
+pub const EXAMPLE_LUA: &str = r#"-- Folio runs init.lua (not this file) at startup, when you save it, and on
+-- Reload Config. To use this example, rename it to init.lua. The functions
+-- are described in docs/customizing.md; errors and print() go to Help → Log.
+-- Scripts can't touch files, programs or the network.
+
+-- Insert today's date where the caret is.
+folio.register_command("date", function()
+  folio.insert_text(os.date("%Y-%m-%d"))
+end)
+
+-- Wrap the selection in curly quotes.
+folio.register_command("quote", function()
+  local _, _, text = folio.get_selection()
+  folio.insert_text("“" .. text .. "”")
+end)
+
+-- Commands appear in the Scripts menu. Give them keys in keys.toml:
+--   "cmd+shift+d" = "lua date"
+--   "cmd+shift+q" = "lua quote"
 "#;
 
 /// Notices when config files change on disk, checking about once a second.

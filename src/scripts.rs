@@ -326,6 +326,16 @@ mod tests {
     }
 
     #[test]
+    fn the_shipped_example_runs() {
+        let mut ed = editor("say hi");
+        let mut scripts = run(crate::settings::EXAMPLE_LUA, &mut ed).unwrap();
+        assert_eq!(scripts.names(), vec!["date", "quote"]);
+        ed.select(crate::doc::Pos::new(0, 4), crate::doc::Pos::new(0, 6));
+        scripts.run("quote", &mut ed, &theme()).unwrap();
+        assert_eq!(ed.doc.plain_text(), "say “hi”");
+    }
+
+    #[test]
     fn commands_run_later_against_the_current_document() {
         let mut ed = editor("hello");
         let mut scripts = run(

@@ -107,7 +107,10 @@ and adapters add the `keys` in their manifest. Your `keys.toml` overrides both.
 Put an `init.lua` in the folder to add commands of your own, written in
 [Lua 5.4](https://www.lua.org/manual/5.4/). Folio runs it once when it
 starts, again whenever you save it, and on **Reload Config** (`Cmd+Shift+R`).
-Without the file, Folio doesn't start Lua at all.
+Without the file, Folio doesn't start Lua at all. Folio puts a working
+`init.lua.example` in the folder: rename it to `init.lua` to start from it.
+Registered commands appear in a **Scripts** menu, and `Cmd+/` lists the ones
+that don't have a key yet.
 
 ```lua
 -- Insert today's date where the caret is.

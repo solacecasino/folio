@@ -20,6 +20,8 @@ pub struct MenuContent<'a> {
     pub adapters: Vec<(String, Vec<AdapterItem>)>,
     /// WebAssembly plugins' commands, shown in a Plugins menu.
     pub plugins: Vec<crate::plugins::PluginCommand>,
+    /// Commands init.lua registered, shown in a Scripts menu.
+    pub scripts: Vec<String>,
     /// Documents for File → Open Recent, newest first.
     pub recent: Vec<std::path::PathBuf>,
     pub keymap: &'a Keymap,
@@ -186,6 +188,14 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
                 .iter()
                 .map(|c| Entry::Item(Command::Plugin(c.plugin.clone(), c.id.clone()), c.label.clone()))
                 .collect(),
+        });
+    }
+
+    if !content.scripts.is_empty() {
+        all.push(Section {
+            key: "scripts",
+            title: "Scripts",
+            entries: content.scripts.iter().map(|name| Entry::Item(Command::Lua(name.clone()), name.clone())).collect(),
         });
     }
 

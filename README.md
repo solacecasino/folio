@@ -183,7 +183,7 @@ In it:
 
 - **`settings.toml`**: theme, zoom, the status line, panels, autosave and history. It explains every option inside itself.
 - **`keys.toml`**: every shortcut, all changeable.
-- **`init.lua`** (optional): your own commands, written in Lua, that you can bind to keys. See [docs/customizing.md](docs/customizing.md#initlua).
+- **`init.lua`** (optional): your own commands, written in Lua. They appear in a **Scripts** menu and can be bound to keys. Folio puts an `init.lua.example` in the folder; rename it to `init.lua` to try it. See [docs/customizing.md](docs/customizing.md#initlua).
 - **`themes/`**: your own themes.
 - **`adapters/`** and **`plugins/`**: the add-ons you've installed.
 
@@ -289,16 +289,23 @@ The full reference is [docs/customizing.md](docs/customizing.md).
 - **Something wrong?** Choose **Help → Report a Problem…**. Folio copies its
   debug info and opens the [problem report](../../issues/new?template=bug.yml)
   form in your browser; paste it in. The debug info says which version and
-  platform you're on and what went wrong recently. It never includes your
-  document, and your user name is hidden from file paths.
+  platform you're on, how much memory Folio is using (and the most it has
+  used), the window's size and zoom, and what went wrong recently. It never
+  includes your document, and your user name is hidden from file paths.
+  **Help → Log → Copy Debug Info** copies the same thing without opening the
+  form.
 - **Folio crashed?** It keeps the details, and tells you the next time it
   opens. Report a Problem then includes them.
+- **Feels slow?** Start Folio from a terminal with `FOLIO_FRAME_TIMES=1`
+  (on Windows: `set FOLIO_FRAME_TIMES=1` first) and it prints, for every
+  frame, how much of the window it redrew and how long that took. Paste a
+  few lines into your report.
 - **An idea?** [Suggest it](../../issues/new?template=idea.yml).
 - **A problem with an add-on?** Report it on that add-on's own page, linked
   from the catalog.
 
-**Coming next:** images and tables, then Lua scripting for small tweaks and
-a gallery of shared themes and setups.
+**Coming next:** images and tables, then a gallery of shared themes and
+setups.
 
 ---
 
