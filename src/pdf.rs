@@ -1,5 +1,5 @@
 //! The print model: the document laid out exactly as on screen, as pages of
-//! positioned words in PDF points. Folio itself doesn't write PDFs; it hands
+//! positioned words in PDF points. text9000 itself doesn't write PDFs; it hands
 //! this model to adapters (`doc.print_model`), and the PDF Export adapter
 //! turns it into a file.
 

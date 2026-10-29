@@ -3,7 +3,7 @@
 //!
 //! - `versions/<doc id>/<timestamp>.folio`: a snapshot per save, newest N kept.
 //! - `recovery/<pid>.json`: unsaved work, rewritten while you type and
-//!   removed when you save or quit. One left behind means Folio didn't quit
+//!   removed when you save or quit. One left behind means text9000 didn't quit
 //!   cleanly, so it offers it back on the next launch.
 
 use std::path::{Path, PathBuf};
@@ -50,9 +50,9 @@ fn save_version_in(root: &Path, doc: &Document, keep: usize, stamp: &str) -> Res
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // Timestamps sort in order as file names.
     let name = stamp.replace([' ', ':'], "-");
-    std::fs::write(dir.join(format!("{name}.folio")), doc.to_json()).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{name}.{}", crate::series::EXTENSION)), doc.to_json()).map_err(|e| e.to_string())?;
 
-    let mut files = folio_files(&dir);
+    let mut files = document_files(&dir);
     files.sort();
     let excess = files.len().saturating_sub(keep);
     for old in &files[..excess] {
@@ -61,13 +61,14 @@ fn save_version_in(root: &Path, doc: &Document, keep: usize, stamp: &str) -> Res
     Ok(())
 }
 
-fn folio_files(dir: &Path) -> Vec<PathBuf> {
+/// Versions are .t9k files; ones Folio kept are .folio, and both are listed.
+fn document_files(dir: &Path) -> Vec<PathBuf> {
     std::fs::read_dir(dir)
         .map(|entries| {
             entries
                 .flatten()
                 .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|e| e == "folio"))
+                .filter(|p| crate::series::is_document(p))
                 .collect()
         })
         .unwrap_or_default()
@@ -89,7 +90,7 @@ pub fn list_versions(id: &str) -> Vec<Version> {
 }
 
 fn list_versions_in(dir: &Path) -> Vec<Version> {
-    let mut files = folio_files(dir);
+    let mut files = document_files(dir);
     files.sort();
     files.reverse();
     files
@@ -155,7 +156,7 @@ pub fn clear_recovery() {
     let _ = std::fs::remove_file(own_recovery_file());
 }
 
-/// Recovery files left by copies of Folio that are no longer running, newest first.
+/// Recovery files left by copies of text9000 that are no longer running, newest first.
 pub fn orphaned_recoveries() -> Vec<(PathBuf, Recovery)> {
     let Ok(entries) = std::fs::read_dir(recovery_dir()) else { return Vec::new() };
     let mut found: Vec<(PathBuf, Recovery)> = entries
@@ -163,7 +164,7 @@ pub fn orphaned_recoveries() -> Vec<(PathBuf, Recovery)> {
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
         .filter(|p| {
-            // Another Folio window that's still open owns its own file.
+            // Another text9000 window that's still open owns its own file.
             let pid: Option<u32> = p.file_stem().and_then(|s| s.to_str()?.parse().ok());
             pid.is_none_or(|pid| pid != std::process::id() && !crate::platform::process_alive(pid))
         })
@@ -193,7 +194,7 @@ impl Recovery {
             .and_then(|p| p.file_name())
             .map_or("an untitled document".to_owned(), |n| format!("“{}”", n.to_string_lossy()));
         format!(
-            "Folio closed unexpectedly while you were working on {name} ({words} words, last kept {}).\n\n“{}…”\n\nRestore it?",
+            "text9000 closed unexpectedly while you were working on {name} ({words} words, last kept {}).\n\n“{}…”\n\nRestore it?",
             self.saved_at,
             preview.trim()
         )
@@ -207,7 +208,7 @@ mod tests {
 
     #[test]
     fn versions_are_kept_newest_first_and_capped() {
-        let root = std::env::temp_dir().join(format!("folio-versions-{}", new_doc_id()));
+        let root = std::env::temp_dir().join(format!("text9000-versions-{}", new_doc_id()));
         let mut doc = Document {
             id: Some("abc".into()),
             ..Default::default()

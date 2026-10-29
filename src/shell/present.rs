@@ -1,7 +1,7 @@
 //! Hands finished pixels to the window.
 //!
-//! On macOS the window shows one shared buffer (an IOSurface) that Folio
-//! draws into directly: no second copy in Folio and none in the window
+//! On macOS the window shows one shared buffer (an IOSurface) that text9000
+//! draws into directly: no second copy in text9000 and none in the window
 //! server. Elsewhere softbuffer does the job, which on Windows and X11 also
 //! keeps a single buffer.
 

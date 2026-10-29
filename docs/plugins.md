@@ -1,18 +1,18 @@
-# Extending Folio: plugins and adapters
+# Extending text9000: plugins and adapters
 
-Folio ships bare and has two ways to add to it. They're for different jobs.
+text9000 ships bare and has two ways to add to it. They're for different jobs.
 
 | | **Plugins** (WebAssembly) | **Adapters** (separate programs) |
 |---|---|---|
 | For | Most extensions: text tools, UI tools, format parsers | Integrations with external programs and command-line tools, background work |
-| Runs | Inside Folio, in a sandbox | As its own process, talking JSON over stdin/stdout |
+| Runs | Inside text9000, in a sandbox | As its own process, talking JSON over stdin/stdout |
 | Can reach | Only what its manifest declares: the document, chosen folders, chosen network addresses | Anything the person's account can (permissions describe it, but don't enforce it) |
 | Written in | Any language that builds a WASI Preview 2 component (Rust, C, Go, JavaScript, Python via componentize-py, ...) | Any language |
 | Safety | Enforced: time, memory and output limits; crashes are contained | Trust: only install adapters you trust |
 | Lives in | `plugins/` in the config folder | `adapters/` in the config folder |
 | Spec | [crates/folio_plugin](../crates/folio_plugin/README.md), [WIT interface](../crates/folio_plugin/wit/folio-plugin.wit) | [docs/adapters.md](adapters.md) |
 
-**Plugins are the main way to extend Folio.** A plugin can't read your files,
+**Plugins are the main way to extend text9000.** A plugin can't read your files,
 go online or even see your document unless it says so up front, which is
 what makes installing other people's plugins safe. Reach for an adapter
 when you need something a sandbox can't give: running `pandoc`, talking to a
@@ -20,11 +20,11 @@ long-lived peer-to-peer connection (Folio Link), or other system integration.
 
 ## Plugins
 
-> **Plugins are a preview in Folio 1.0.** They work and are sandboxed, but
+> **Plugins are a preview in text9000 1.0.** They work and are sandboxed, but
 > the interface may still grow and change before it's declared stable.
 
-**Install** a plugin by dropping its `.zip` (or folder) on Folio's window.
-Folio shows what it can do first. **Make one** from
+**Install** a plugin by dropping its `.zip` (or folder) on text9000's window.
+text9000 shows what it can do first. **Make one** from
 [folio-plugin-template](https://github.com/solacecasino/folio-plugin-template):
 a working Rust plugin and a workflow that releases it on each version tag.
 
@@ -34,8 +34,8 @@ plugins/word-goals/
 └── word_goals.wasm
 ```
 
-The config folder is `~/Library/Application Support/Folio` on macOS,
-`%APPDATA%\Folio` on Windows and `~/.config/folio` on Linux (Folio → Open
+The config folder is `~/Library/Application Support/text9000` on macOS,
+`%APPDATA%\text9000` on Windows and `~/.config/text9000` on Linux (text9000 → Open
 Config Folder).
 
 ```toml
@@ -61,7 +61,7 @@ Plugins can read the selection and document facts, insert text or replace
 a range, show text in the status line (`%plugin_status%`), fill panels they
 declare with `[[panels]]` (placed with `kind = "plugin"` in settings.toml),
 show messages, and log. **Help → Log** shows their log lines and errors.
-Folio → Reload Config reloads plugins too.
+text9000 → Reload Config reloads plugins too.
 
 What a plugin can call, and the events it gets, are in the
 [WIT interface](../crates/folio_plugin/wit/folio-plugin.wit). Edits a plugin
@@ -72,26 +72,26 @@ put in the wrong place.
 Every plugin runs under limits it can't change: about 2 seconds per event,
 64 MB of memory, and 1,000 edits or messages per event. A plugin that
 crashes is restarted; one that fails three times in a row is turned off
-until Folio restarts.
+until text9000 restarts.
 
-## folio-lite
+## text9000 Lite
 
-The plugin runtime ([Wasmtime](https://wasmtime.dev)) is most of Folio's
+The plugin runtime ([Wasmtime](https://wasmtime.dev)) is most of text9000's
 size, so releases come in two editions:
 
 | | Download (macOS) | |
 |---|---|---|
-| **Folio** | about 9 MB | Plugins and adapters |
-| **Folio Lite** | about 5 MB | Adapters only; plugins are ignored |
+| **text9000** | about 9 MB | Plugins and adapters |
+| **text9000 Lite** | about 5 MB | Adapters only; plugins are ignored |
 
 Build either from source:
 
 ```sh
-cargo build --release                         # Folio
-cargo build --release --no-default-features   # Folio Lite
+cargo build --release                         # text9000
+cargo build --release --no-default-features   # text9000 Lite
 ```
 
 The `wasi-plugins` cargo feature (on by default) is the only difference.
 Everything else, including `keys.toml` bindings to plugin commands, works
-the same in both; in Folio Lite, running a plugin command says that this
+the same in both; in text9000 Lite, running a plugin command says that this
 edition doesn't include plugins.

@@ -154,7 +154,7 @@ fn plugin(ui: &mut Ui, spec: &PanelSpec, cx: &Context<'_>, actions: &mut Vec<Act
         let why = if cfg!(feature = "wasi-plugins") {
             format!("“{name}” isn't installed")
         } else {
-            "Folio Lite doesn't run plugins".to_owned()
+            "text9000 Lite doesn't run plugins".to_owned()
         };
         ui.label(RichText::new(why).weak());
         return;

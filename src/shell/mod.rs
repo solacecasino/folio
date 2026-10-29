@@ -222,7 +222,7 @@ impl<A: App> Runner<A> {
     fn start(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
         let ctx = egui::Context::default();
         // Separate windows (Adapters) are real windows, and a frame may run
-        // twice when Folio asks egui to redo it (after changing fonts).
+        // twice when text9000 asks egui to redo it (after changing fonts).
         ctx.set_embed_viewports(false);
         ctx.options_mut(|o| o.max_passes = std::num::NonZeroUsize::new(2).expect("2 is not zero"));
         let builder = self.builder.clone().with_visible(false);
@@ -248,7 +248,7 @@ impl<A: App> Runner<A> {
         input.init_accesskit(event_loop, &window, self.proxy.clone());
 
         let presenter = Presenter::new(window.clone())?;
-        let create = self.create.take().ok_or("Folio was already started")?;
+        let create = self.create.take().ok_or("text9000 was already started")?;
         let app = create(&ctx);
 
         let mut viewports = HashMap::new();
@@ -438,7 +438,7 @@ impl Shared {
                 damage
             });
             if let Err(e) = drawn {
-                crate::log::push("Folio", crate::log::Level::Error, format!("Couldn't draw the window: {e}"));
+                crate::log::push("text9000", crate::log::Level::Error, format!("Couldn't draw the window: {e}"));
             }
             if !v.shown {
                 v.shown = true;
@@ -534,7 +534,7 @@ impl Shared {
         egui_winit::update_viewport_info(&mut v.info, &ctx, &window, true);
         match Presenter::new(window.clone()) {
             Ok(p) => v.presenter = Some(p),
-            Err(e) => crate::log::push("Folio", crate::log::Level::Error, format!("Couldn't open a window: {e}")),
+            Err(e) => crate::log::push("text9000", crate::log::Level::Error, format!("Couldn't open a window: {e}")),
         }
         self.by_window.insert(window.id(), id);
         v.window = Some(window);
@@ -576,7 +576,7 @@ fn draw_immediate(shared: &RefCell<Shared>, viewport: egui::ImmediateViewport<'_
 /// FOLIO_FRAME_TIMES=1 prints how long each frame took to draw.
 fn timing() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("FOLIO_FRAME_TIMES").is_some())
+    *ON.get_or_init(|| crate::series::env("FRAME_TIMES").is_some())
 }
 
 /// Decodes the bundled PNG icon.

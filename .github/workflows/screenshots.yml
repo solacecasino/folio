@@ -1,4 +1,4 @@
-# Runs Folio on Windows and Linux, types a little, and takes screenshots,
+# Runs text9000 on Windows and Linux, types a little, and takes screenshots,
 # so drawn menus, lists, links, spell check and Tab can be checked by eye
 # without those machines. Runs with every release (release.yml), and by
 # hand: Actions → Screenshots → Run workflow.
@@ -28,17 +28,17 @@ jobs:
           export FOLIO_CONFIG_DIR=$PWD/cfg DISPLAY=:99
           Xvfb :99 -screen 0 1280x1000x24 &
           sleep 2
-          # A window manager, so Folio's window gets keyboard focus.
+          # A window manager, so text9000's window gets keyboard focus.
           openbox &
           sleep 1
-          ./target/debug/folio --version
-          ./target/debug/folio examples/welcome.folio &
+          ./target/debug/text9000 --version
+          ./target/debug/text9000 examples/welcome.folio &
           sleep 10
-          W=$(xdotool search --sync --class folio | head -1)
+          W=$(xdotool search --sync --class text9000 | head -1)
           xdotool windowactivate --sync "$W"
           shot() { import -window root "shots/$1.png"; }
           shot 1-start
-          # Positions relative to Folio's window: the menus are in its top strip.
+          # Positions relative to text9000's window: the menus are in its top strip.
           xdotool mousemove --window "$W" 70 14 click 1; sleep 1; shot 2-menu
           xdotool key Escape; sleep 0.5
           xdotool mousemove --window "$W" 500 500 click 1; sleep 0.5
@@ -76,7 +76,7 @@ jobs:
             $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
             $img.Save("shots\$name.png")
           }
-          $p = Start-Process -FilePath target\debug\folio.exe -ArgumentList "examples\welcome.folio" -PassThru
+          $p = Start-Process -FilePath target\debug\text9000.exe -ArgumentList "examples\welcome.folio" -PassThru
           Start-Sleep 12
           Shot "1-start"
           $wshell = New-Object -ComObject wscript.shell
@@ -113,7 +113,7 @@ jobs:
         run: |
           mkdir -p shots cfg
           export FOLIO_CONFIG_DIR=$PWD/cfg
-          ./target/debug/folio examples/welcome.folio &
+          ./target/debug/text9000 examples/welcome.folio &
           PID=$!
           sleep 10
           shot() { screencapture -x "shots/$1.png"; }

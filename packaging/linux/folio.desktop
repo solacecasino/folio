@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Folio
-Comment=A document editor that ships bare and is endlessly customizable
-Exec=folio %u
-Icon=folio
-Terminal=false
-Categories=Office;WordProcessor;
-MimeType=application/x-folio;x-scheme-handler/folio;

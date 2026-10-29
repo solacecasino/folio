@@ -1,6 +1,6 @@
 //! The few things that differ between macOS, Windows and Linux: where the
 //! config folder lives, local time, whether a process is alive, opening a
-//! folder or link, and the trash. Everything else in Folio is the same code
+//! folder or link, and the trash. Everything else in text9000 is the same code
 //! on every platform.
 
 use std::path::{Path, PathBuf};
@@ -17,18 +17,54 @@ pub const FILE_BROWSER: &str = if cfg!(target_os = "macos") {
 /// What the trash is called.
 pub const TRASH: &str = if cfg!(windows) { "the Recycle Bin" } else { "the Trash" };
 
-/// The folder Folio keeps everything in, unless `FOLIO_CONFIG_DIR` says otherwise.
+/// The folder text9000 keeps everything in, unless `TEXT9000_CONFIG_DIR`
+/// (or Folio's `FOLIO_CONFIG_DIR`) says otherwise.
 pub fn default_config_dir() -> PathBuf {
+    config_dir_named("text9000", "text9000")
+}
+
+/// Set when this start copied Folio's settings over, to say so once.
+pub static ADOPTED: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Where Folio kept its config: copied over by `adopt_folio_config`.
+pub fn folio_config_dir() -> PathBuf {
+    config_dir_named("Folio", "folio")
+}
+
+fn config_dir_named(name: &str, linux_name: &str) -> PathBuf {
     let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
     if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Folio")
+        home.join("Library/Application Support").join(name)
     } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map_or_else(|| home.join("AppData/Roaming"), PathBuf::from).join("Folio")
+        std::env::var_os("APPDATA").map_or_else(|| home.join("AppData/Roaming"), PathBuf::from).join(name)
     } else {
         std::env::var_os("XDG_CONFIG_HOME")
             .filter(|v| !v.is_empty())
             .map_or_else(|| home.join(".config"), PathBuf::from)
-            .join("folio")
+            .join(linux_name)
+    }
+}
+
+/// On the first start of text9000, copies Folio's config folder (settings,
+/// keys, themes, init.lua, adapters, versions, recovery) into text9000's,
+/// so everything carries over. Folio's folder is left as it was, so text9000
+/// still works. Returns the folder it copied from.
+pub fn adopt_folio_config(new: &Path, old: &Path) -> Option<PathBuf> {
+    if new.exists() || !old.is_dir() {
+        return None;
+    }
+    // Copied next to the target, then renamed into place, so a copy cut off
+    // halfway is never mistaken for a finished one.
+    let partial = new.with_extension("partial");
+    let _ = std::fs::remove_dir_all(&partial);
+    let copied = copy_dir(old, &partial).and_then(|()| std::fs::rename(&partial, new));
+    match copied {
+        Ok(()) => Some(old.to_path_buf()),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&partial);
+            eprintln!("text9000: couldn't copy Folio's settings from {}: {e}", old.display());
+            None
+        }
     }
 }
 
@@ -163,7 +199,7 @@ pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Why Folio's questions (save before closing, allow this adapter, ...)
+/// Why text9000's questions (save before closing, allow this adapter, ...)
 /// can't be shown, if they can't. On Linux they need zenity, kdialog or
 /// xmessage (see `dialog`); with none, every question would quietly come
 /// back as "Cancel".
@@ -171,7 +207,7 @@ pub fn dialog_problem() -> Option<String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     if crate::dialog::linux_program().is_none() {
         return Some(
-            "Folio can't show its questions (like saving before closing) because zenity isn't installed. \
+            "text9000 can't show its questions (like saving before closing) because zenity isn't installed. \
              Install it: sudo apt install zenity (Debian, Ubuntu), sudo dnf install zenity (Fedora), \
              sudo pacman -S zenity (Arch)."
                 .to_owned(),
@@ -182,7 +218,7 @@ pub fn dialog_problem() -> Option<String> {
 
 /// On Linux under X11, the windowing library needs libxkbcommon-x11 and
 /// crashes with a cryptic message without it. Checked before the window
-/// opens so Folio can say what to install instead.
+/// opens so text9000 can say what to install instead.
 pub fn missing_system_library() -> Option<String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
@@ -198,7 +234,7 @@ pub fn missing_system_library() -> Option<String> {
             };
             if !found {
                 return Some(
-                    "Folio needs the libxkbcommon-x11 library to open its window. Install it: \
+                    "text9000 needs the libxkbcommon-x11 library to open its window. Install it: \
                      sudo apt install libxkbcommon-x11-0 (Debian, Ubuntu), \
                      sudo dnf install libxkbcommon-x11 (Fedora), sudo pacman -S libxkbcommon-x11 (Arch)."
                         .to_owned(),
@@ -294,6 +330,23 @@ pub fn hide_home(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn folio_settings_carry_over_once() {
+        let root = std::env::temp_dir().join(format!("text9000-adopt-{}", std::process::id()));
+        let (old, new) = (root.join("Folio"), root.join("text9000"));
+        std::fs::create_dir_all(old.join("themes")).unwrap();
+        std::fs::write(old.join("keys.toml"), "\"cmd+j\" = \"bold\"").unwrap();
+        std::fs::write(old.join("themes/mine.toml"), "name = \"Mine\"").unwrap();
+        assert_eq!(super::adopt_folio_config(&new, &old), Some(old.clone()));
+        assert_eq!(std::fs::read_to_string(new.join("keys.toml")).unwrap(), "\"cmd+j\" = \"bold\"");
+        assert!(new.join("themes/mine.toml").exists() && old.join("keys.toml").exists(), "Folio's folder stays");
+        std::fs::write(new.join("keys.toml"), "").unwrap();
+        assert_eq!(super::adopt_folio_config(&new, &old), None, "only the first time");
+        assert_eq!(std::fs::read_to_string(new.join("keys.toml")).unwrap(), "");
+        assert_eq!(super::adopt_folio_config(&root.join("x"), &root.join("missing")), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn memory_use_is_read() {
         let (now, peak) = super::memory_use().expect("every platform reports memory");
         assert!(now > 1 << 20, "{now}");
@@ -318,7 +371,7 @@ mod tests {
 
     #[test]
     fn copies_and_moves_folders() {
-        let root = std::env::temp_dir().join(format!("folio-platform-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("text9000-platform-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("a/inner")).unwrap();
         std::fs::write(root.join("a/inner/f.txt"), "hi").unwrap();

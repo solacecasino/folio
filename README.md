@@ -1,24 +1,25 @@
-<p align="center"><img src="assets/icon.png" width="128" alt="Folio icon"></p>
+<p align="center"><img src="assets/icon.png" width="128" alt="text9000 icon"></p>
 
-<h1 align="center">Folio</h1>
+<h1 align="center">text9000</h1>
 
 <p align="center"><b>Bare when installed, insanely customizable.</b></p>
 
-Folio is a lean document editor for macOS, Windows and Linux, written in Rust. It opens to
+text9000 is a lean document editor for macOS, Windows and Linux, written in Rust. It opens to
 a blank page and a cursor: no ribbon, no template store, no account, nothing
 running in the background. How your documents look comes from plain theme
 files you own, and anything extra comes from add-ons you choose, in the
 spirit of [foobar2000](https://www.foobar2000.org/).
 
-This page is the user guide. Read it once and you'll know everything Folio
-can do; it takes about ten minutes. Folio's **Help → User Guide** opens this
+This page is the user guide. Read it once and you'll know everything text9000
+can do; it takes about ten minutes. text9000's **Help → User Guide** opens this
 page.
 
 **Contents:** [Install](#install) · [Your first document](#your-first-document) ·
 [Writing and formatting](#writing-and-formatting) · [Saving, history and recovery](#saving-history-and-recovery) ·
 [Pages, printing and PDF](#pages-printing-and-pdf) · [Add-ons](#add-ons) ·
-[Making Folio yours](#making-folio-yours) · [Shortcuts](#shortcuts) ·
-[Help and problems](#help-and-problems) · [Build from source](#build-from-source)
+[Making text9000 yours](#making-text9000-yours) · [Shortcuts](#shortcuts) ·
+[Help and problems](#help-and-problems) · [The 9000 series](#the-9000-series) ·
+[Coming from Folio](#coming-from-folio) · [Build from source](#build-from-source)
 
 ---
 
@@ -28,11 +29,11 @@ Download yours from [Releases](../../releases/latest):
 
 | | Download | Then |
 |---|---|---|
-| **macOS** (Apple Silicon and Intel) | `Folio-<version>-macos-universal.zip` | Unzip and drag **Folio.app** into Applications. It isn't signed with an Apple developer certificate yet, so the first time, right-click it and choose **Open**. |
-| **Windows** (64-bit) | `Folio-<version>-windows-x64.zip` | Unzip anywhere and run **folio.exe** (keep the `themes` folder next to it). If Windows says it protected your PC, click **More info → Run anyway**. |
-| **Linux** (x86-64) | `folio-<version>-linux-x64.tar.gz` | Unpack it and run `./install.sh` to add Folio to your app menu, or just run `./folio`. You need `zenity` for open and save dialogs. |
+| **macOS** (Apple Silicon and Intel) | `text9000-<version>-macos-universal.zip` | Unzip and drag **text9000.app** into Applications. It isn't signed with an Apple developer certificate yet, so the first time, right-click it and choose **Open**. |
+| **Windows** (64-bit) | `text9000-<version>-windows-x64.zip` | Unzip anywhere and run **text9000.exe** (keep the `themes` folder next to it). If Windows says it protected your PC, click **More info → Run anyway**. |
+| **Linux** (x86-64) | `text9000-<version>-linux-x64.tar.gz` | Unpack it and run `./install.sh` to add text9000 to your app menu, or just run `./text9000`. You need `zenity` for open and save dialogs. |
 
-Each also comes as **Folio Lite** (`Folio-Lite-…`, `folio-lite-…`): the same
+Each also comes as **text9000 Lite** (`text9000-lite-…`): the same
 app without WebAssembly plugins, about 40% smaller. Adapters work in both.
 
 > **Windows and Linux:** the menus are inside the window, and every `Cmd`
@@ -42,16 +43,16 @@ app without WebAssembly plugins, about 40% smaller. Adapters work in both.
 
 ## Your first document
 
-Open Folio and start typing. That's the whole interface: a page, a cursor,
+Open text9000 and start typing. That's the whole interface: a page, a cursor,
 and a status line along the bottom with your word count.
 
-- **Save** with `Cmd+S`. Folio documents end in `.folio`.
-- **Open** with `Cmd+O`, or **File → Open Recent**, or drop a `.folio` file on the window.
+- **Save** with `Cmd+S`. text9000 documents end in `.t9k`. Documents from Folio (`.folio`) open as they are and save back as `.folio`.
+- **Open** with `Cmd+O`, or **File → Open Recent**, or drop a `.t9k` or `.folio` file on the window. Videos, sound and photos open in their [9000 apps](#the-9000-series).
 - **New** with `Cmd+N`.
 - **See every shortcut** with `Cmd+/`. Keep this one in mind; it's the cheat sheet.
 
-Folio remembers its window size and place, and the documents you opened
-recently. There's no settings window; [Making Folio yours](#making-folio-yours)
+text9000 remembers its window size and place, and the documents you opened
+recently. There's no settings window; [Making text9000 yours](#making-text9000-yours)
 explains why, and how to change anything.
 
 ---
@@ -59,7 +60,7 @@ explains why, and how to change anything.
 ## Writing and formatting
 
 **Text.** `Cmd+B`, `Cmd+I` and `Cmd+U` for bold, italic and underline, or
-the **Format** menu. As you type, Folio turns straight quotes into curly
+the **Format** menu. As you type, text9000 turns straight quotes into curly
 ones, `--` into an em dash, and `...` into an ellipsis.
 
 **Paragraph styles.** Title, headings, body, quote and the rest come from
@@ -91,7 +92,7 @@ and whole words.
 **Spell check** uses your computer's own dictionaries. Misspelled words are
 underlined; right-click one for suggestions.
 
-**Copy and paste** between Folio documents keeps formatting. Pasting from
+**Copy and paste** between text9000 documents keeps formatting. Pasting from
 other apps brings in plain text.
 
 **Undo** is `Cmd+Z`, **redo** is `Cmd+Shift+Z`.
@@ -100,11 +101,11 @@ other apps brings in plain text.
 
 ## Saving, history and recovery
 
-Folio is built so you don't lose work:
+text9000 is built so you don't lose work:
 
-- **Autosave.** Once a document has a name, Folio saves it two seconds after you stop typing.
-- **Version history.** Every time you save, and every five minutes while autosave is working, Folio keeps a snapshot (the last 50 per document). **File → Browse Versions…** shows them; click one to restore it. The restore can itself be undone.
-- **Crash recovery.** Work you haven't named yet is kept in a recovery copy. If Folio or your computer crashes, Folio offers it back the next time it opens.
+- **Autosave.** Once a document has a name, text9000 saves it two seconds after you stop typing.
+- **Version history.** Every time you save, and every five minutes while autosave is working, text9000 keeps a snapshot (the last 50 per document). **File → Browse Versions…** shows them; click one to restore it. The restore can itself be undone.
+- **Crash recovery.** Work you haven't named yet is kept in a recovery copy. If text9000 or your computer crashes, text9000 offers it back the next time it opens.
 
 Your documents are readable JSON files on your own disk. Nothing is sent anywhere.
 
@@ -112,7 +113,7 @@ Your documents are readable JSON files on your own disk. Nothing is sent anywher
 
 ## Pages, printing and PDF
 
-Folio shows real pages, with the page size, margins, headers and footers
+text9000 shows real pages, with the page size, margins, headers and footers
 your theme sets, and long paragraphs flow across pages as they will print.
 Zoom with `Cmd+=` and `Cmd+-`.
 
@@ -123,7 +124,7 @@ PDF** (`Cmd+E`). The PDF matches the screen exactly, links included.
 
 ## Add-ons
 
-Folio comes with nothing extra on purpose. Anything optional is an add-on
+text9000 comes with nothing extra on purpose. Anything optional is an add-on
 you choose. Some good ones to start with:
 
 | | |
@@ -137,22 +138,22 @@ you choose. Some good ones to start with:
 
 1. Open the [add-on catalog](https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md).
 2. Download the zip for your computer.
-3. Drop the zip on the Folio window.
+3. Drop the zip on the text9000 window.
 
-That's it: no restart. Folio shows you what the add-on is allowed to do (for
+That's it: no restart. text9000 shows you what the add-on is allowed to do (for
 example "read your document") and asks before it runs the first time.
-**Folio → Adapters…** (`Cmd+Shift+A`) lists everything you've added, runs its
-commands, and removes it. Folio never goes online to do any of this; you do
+**text9000 → Adapters…** (`Cmd+Shift+A`) lists everything you've added, runs its
+commands, and removes it. text9000 never goes online to do any of this; you do
 the downloading.
 
 **Inviting someone with Folio Link:** choose **Share This Document** from
-its commands, and Folio copies an invite link (`folio://join#…`). Send it to them;
-when they click it, Folio opens with your document and you see each other's
+its commands, and text9000 copies an invite link (`folio://join#…`). Send it to them;
+when they click it, text9000 opens with your document and you see each other's
 typing.
 
 There are two kinds of add-on. **Plugins** are small WebAssembly programs
 that run in a sandbox and can only touch what they declared; they appear in a
-**Plugins** menu (not in Folio Lite). **Adapters** are separate programs, in
+**Plugins** menu (not in text9000 Lite). **Adapters** are separate programs, in
 any language, for connecting outside tools. You install both the same way.
 [How they differ](docs/plugins.md).
 
@@ -168,32 +169,32 @@ your add-on prints while you build it.
 
 ---
 
-## Making Folio yours
+## Making text9000 yours
 
-Folio has no settings window. Everything is a plain text file in one folder,
-which you open with **Folio → Open Config Folder**:
+text9000 has no settings window. Everything is a plain text file in one folder,
+which you open with **text9000 → Open Config Folder**:
 
 | | |
 |---|---|
-| macOS | `~/Library/Application Support/Folio` |
-| Windows | `%APPDATA%\Folio` |
-| Linux | `~/.config/folio` |
+| macOS | `~/Library/Application Support/text9000` |
+| Windows | `%APPDATA%\text9000` |
+| Linux | `~/.config/text9000` |
 
 In it:
 
 - **`settings.toml`**: theme, zoom, the status line, panels, autosave and history. It explains every option inside itself.
 - **`keys.toml`**: every shortcut, all changeable.
-- **`init.lua`** (optional): your own commands, written in Lua. They appear in a **Scripts** menu and can be bound to keys. Folio puts an `init.lua.example` in the folder; rename it to `init.lua` to try it. See [docs/customizing.md](docs/customizing.md#initlua).
+- **`init.lua`** (optional): your own commands, written in Lua. They appear in a **Scripts** menu and can be bound to keys. text9000 puts an `init.lua.example` in the folder; rename it to `init.lua` to try it. See [docs/customizing.md](docs/customizing.md#initlua).
 - **`themes/`**: your own themes.
 - **`adapters/`** and **`plugins/`**: the add-ons you've installed.
 
-Save a file and Folio changes right away; no restart. Copy the folder to
+Save a file and text9000 changes right away; no restart. Copy the folder to
 another computer, or share it, and you've moved your whole setup.
 
 ### Themes
 
 A theme is one file that sets the page size and margins, colors, fonts,
-headers and footers, and every paragraph style. Three come with Folio:
+headers and footers, and every paragraph style. Three come with text9000:
 **Paper**, **Modern** and **Manuscript**. `Cmd+T` switches between them.
 
 To make your own, copy [themes/paper.toml](themes/paper.toml) (it lists every
@@ -286,18 +287,18 @@ The full reference is [docs/customizing.md](docs/customizing.md).
 
 ## Help and problems
 
-- **Something wrong?** Choose **Help → Report a Problem…**. Folio copies its
+- **Something wrong?** Choose **Help → Report a Problem…**. text9000 copies its
   debug info and opens the [problem report](../../issues/new?template=bug.yml)
   form in your browser; paste it in. The debug info says which version and
-  platform you're on, how much memory Folio is using (and the most it has
+  platform you're on, how much memory text9000 is using (and the most it has
   used), the window's size and zoom, and what went wrong recently. It never
   includes your document, and your user name is hidden from file paths.
   **Help → Log → Copy Debug Info** copies the same thing without opening the
   form.
-- **Folio crashed?** It keeps the details, and tells you the next time it
+- **text9000 crashed?** It keeps the details, and tells you the next time it
   opens. Report a Problem then includes them.
-- **Feels slow?** Start Folio from a terminal with `FOLIO_FRAME_TIMES=1`
-  (on Windows: `set FOLIO_FRAME_TIMES=1` first) and it prints, for every
+- **Feels slow?** Start text9000 from a terminal with `TEXT9000_FRAME_TIMES=1`
+  (on Windows: `set TEXT9000_FRAME_TIMES=1` first) and it prints, for every
   frame, how much of the window it redrew and how long that took. Paste a
   few lines into your report.
 - **An idea?** [Suggest it](../../issues/new?template=idea.yml).
@@ -306,6 +307,65 @@ The full reference is [docs/customizing.md](docs/customizing.md).
 
 **Coming next:** images and tables, then a gallery of shared themes and
 setups.
+
+---
+
+## The 9000 series
+
+text9000 is one of four apps built the same way: bare, modular, configured
+with plain files. Its sisters are
+[splice9000](https://github.com/solacecasino/splice9000) (video),
+[wave9000](https://github.com/solacecasino/wave9000) (sound) and
+[grace9000](https://github.com/solacecasino/grace9000) (photos). text9000
+works with them directly:
+
+- **Open or drop** a video, a sound file or a photo, or a `.splice`, `.wave`
+  or `.grace` project, and it opens in the right sister app instead.
+- **Link to them.** **Format → Link to a File…** links the selection (or the
+  file's name) to any file; `Cmd`-click the link and the file opens in its
+  9000 app. A script or shot list can point at the edit, the takes and the
+  stills. Links to files in the document's folder (or below it) are written
+  relative to it, so the folder can be moved or shared as a whole.
+- **The 9000 menu** opens splice9000, wave9000 or grace9000. It shows only
+  the ones that are installed. Bind one to a key with `app splice9000` in
+  `keys.toml`.
+
+text9000 finds the sister apps by itself: on macOS wherever they are, on
+Linux through their `install.sh` menu entries or your `PATH`, and on Windows
+on your `PATH` or unzipped next to text9000's own folder. If it doesn't find
+one, name it in `settings.toml`:
+
+```toml
+[apps]
+splice9000 = "C:/Apps/splice9000/splice9000.exe"
+```
+
+All four share one look: graphite with one signal color each (splice orange,
+wave blue, grace violet, and text9000's ink green), the name with 9000 in
+mono, and a mark cut on the same slant.
+
+## Coming from Folio
+
+text9000 *is* Folio, renamed when it joined the 9000 series, at version 3.0.
+Nothing you had stops working:
+
+- **Your setup comes along.** The first time text9000 starts, it copies
+  Folio's whole config folder (settings, keys, themes, `init.lua`, adapters,
+  versions) into its own. Folio's folder is left as it was.
+- **`.folio` documents open** and save back as `.folio`; new documents are `.t9k`.
+  The file format inside is the same, so Folio 2 can open a `.t9k` renamed to `.folio`.
+- **`folio://` links**, such as Folio Link invites, still work.
+- **Scripts:** the `folio` table in `init.lua` is still there; `text9000` is a
+  second name for the same table.
+- **Adapters and plugins** written for Folio work unchanged.
+- **`FOLIO_CONFIG_DIR`** and the other `FOLIO_…` variables still work;
+  `TEXT9000_…` is the new spelling.
+- On Linux, `install.sh` replaces Folio's menu entry and leaves `folio` in
+  `~/.local/bin` as a shortcut to text9000.
+
+What did change: the app's name, icon and window colors, the config folder's
+name, and the macOS bundle (`app.text9000.editor`), so macOS asks once more
+before opening it, and the Linux window class (`text9000`).
 
 ---
 
@@ -321,7 +381,7 @@ python3 scripts/package.py                      # build this platform's download
 On Linux you also need the usual windowing libraries, for example on Debian
 or Ubuntu: `sudo apt install libxkbcommon-dev`. Releases are
 built on all three platforms by [GitHub Actions](.github/workflows/release.yml)
-when a version tag is pushed. How Folio is built, and why:
+when a version tag is pushed. How text9000 is built, and why:
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## License

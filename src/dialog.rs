@@ -1,7 +1,7 @@
 //! Folio's questions (save before closing, allow this adapter, ...). On
 //! macOS and Windows they're the system's own dialogs. On Linux rfd shows
 //! them with `zenity`, which KDE and minimal desktops often don't have, so
-//! Folio falls back to KDE's `kdialog`, then to X11's plain `xmessage`.
+//! text9000 falls back to KDE's `kdialog`, then to X11's plain `xmessage`.
 
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult};
 

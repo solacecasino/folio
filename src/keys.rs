@@ -1,6 +1,6 @@
 //! Named commands and the keymap.
 //!
-//! Every action in Folio is a command with a name (`bold`, `save`,
+//! Every action in text9000 is a command with a name (`bold`, `save`,
 //! `style h1`, `adapter "Writing Tools" goal`). `keys.toml` binds key
 //! combinations to command names, like mpv's input.conf, and the same table
 //! drives the menu bar's shortcuts and the in-window keyboard handling.
@@ -42,6 +42,7 @@ pub enum Builtin {
     OpenAdaptersFolder,
     Adapters,
     Log,
+    LinkFile,
 }
 
 /// (command, name in keys.toml, menu label, default keys)
@@ -51,7 +52,7 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::Save, "save", "Save", &["cmd+s"]),
     (Builtin::SaveAs, "save-as", "Save As…", &["cmd+shift+s"]),
     (Builtin::Versions, "versions", "Browse Versions…", &[]),
-    (Builtin::Quit, "quit", "Quit Folio", &["cmd+q"]),
+    (Builtin::Quit, "quit", "Quit text9000", &["cmd+q"]),
     (Builtin::Undo, "undo", "Undo", &["cmd+z"]),
     (Builtin::Redo, "redo", "Redo", &["cmd+shift+z"]),
     (Builtin::SelectAll, "select-all", "Select All", &["cmd+a"]),
@@ -76,6 +77,7 @@ pub const BUILTINS: &[(Builtin, &str, &str, &[&str])] = &[
     (Builtin::OpenConfigFolder, "open-config-folder", "Open Config Folder", &[]),
     (Builtin::OpenAdaptersFolder, "open-adapters-folder", "Open Adapters Folder", &[]),
     (Builtin::Adapters, "adapters", "Adapters…", &["cmd+shift+a"]),
+    (Builtin::LinkFile, "link-file", "Link to a File…", &[]),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -89,6 +91,8 @@ pub enum Command {
     Plugin(String, String),
     /// Run a command registered by init.lua.
     Lua(String),
+    /// Open another 9000-series app (`app splice9000`).
+    App(String),
     /// Open this document (File → Open Recent). Not bindable in keys.toml.
     OpenFile(std::path::PathBuf),
 }
@@ -100,6 +104,7 @@ impl Command {
             Command::Style(s) => s.clone(),
             Command::Adapter(_, id) | Command::Plugin(_, id) => id.clone(),
             Command::Lua(name) => name.clone(),
+            Command::App(name) => format!("Open {name}"),
             Command::OpenFile(p) => p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
         }
     }
@@ -117,6 +122,7 @@ impl fmt::Display for Command {
             Command::Adapter(name, id) => write!(f, "adapter \"{name}\" {id}"),
             Command::Plugin(name, id) => write!(f, "plugin \"{name}\" {id}"),
             Command::Lua(name) => write!(f, "lua {name}"),
+            Command::App(name) => write!(f, "app {name}"),
             Command::OpenFile(p) => write!(f, "open {}", p.display()),
         }
     }
@@ -133,6 +139,13 @@ pub fn parse_command(s: &str) -> Result<Option<Command>, String> {
     }
     if let Some(name) = s.strip_prefix("lua ") {
         return Ok(Some(Command::Lua(name.trim().to_owned())));
+    }
+    if let Some(name) = s.strip_prefix("app ") {
+        let name = name.trim();
+        return match crate::series::sibling(name) {
+            Some(app) => Ok(Some(Command::App(app.name.to_owned()))),
+            None => Err(format!("unknown app \"{name}\" (splice9000, wave9000 or grace9000)")),
+        };
     }
     // "component" is the older name for adapters and still works.
     for (prefix, kind) in [("adapter ", "adapter"), ("component ", "adapter"), ("plugin ", "plugin")] {

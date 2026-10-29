@@ -1,14 +1,14 @@
 //! Adapters: optional add-ons that run as separate programs, in the spirit
-//! of foobar2000's components. Folio stays bare; everything extra is an
+//! of foobar2000's components. text9000 stays bare; everything extra is an
 //! adapter someone installs on purpose.
 //!
-//! An adapter is a folder holding `adapter.toml` and a program. Folio
+//! An adapter is a folder holding `adapter.toml` and a program. text9000
 //! starts the program only when it's needed and talks to it with one JSON
 //! message per line over stdin/stdout. See `docs/adapters.md` for the
 //! protocol.
 //!
 //! Nothing is installed by default. People add adapters from the Adapters
-//! window (a downloaded `.zip` or folder), and Folio keeps them in the
+//! window (a downloaded `.zip` or folder), and text9000 keeps them in the
 //! `adapters` folder of its config folder. Adapters used to be called
 //! components; a `components/` folder there and `component.toml` still work.
 
@@ -90,7 +90,7 @@ pub enum Start {
     /// Started the first time one of its commands is used.
     #[default]
     Command,
-    /// Started when Folio opens.
+    /// Started when text9000 opens.
     Launch,
 }
 
@@ -135,10 +135,10 @@ pub struct Adapter {
     pub status: Option<String>,
     /// Panel contents by panel id.
     pub panels: BTreeMap<String, Vec<PanelLine>>,
-    /// Set when the user said no or it failed to start, so Folio doesn't
+    /// Set when the user said no or it failed to start, so text9000 doesn't
     /// keep asking every frame a panel wants it.
     blocked: bool,
-    /// Uninstalled or replaced while Folio was open. Kept as a stopped
+    /// Uninstalled or replaced while text9000 was open. Kept as a stopped
     /// placeholder so every other adapter keeps its index.
     pub removed: bool,
 }
@@ -240,7 +240,7 @@ impl Host {
     }
 
     /// Starts an adapter whose panel is on screen. Asks for approval once;
-    /// after a "no" it stays stopped until Folio restarts.
+    /// after a "no" it stays stopped until text9000 restarts.
     pub fn ensure_running(&mut self, i: usize) -> Result<(), String> {
         if self.all[i].running.is_some() || self.all[i].blocked {
             return Ok(());
@@ -300,7 +300,9 @@ impl Host {
             json!({
                 "method": "initialize",
                 "params": {
+                    // "folio" is the name adapters written for Folio look for.
                     "folio": env!("CARGO_PKG_VERSION"),
+                    "text9000": env!("CARGO_PKG_VERSION"),
                     "protocol": PROTOCOL_VERSION,
                     "permissions": permissions,
                 },
@@ -380,7 +382,7 @@ impl Host {
         self.send(i, message);
     }
 
-    /// Starts `start = "launch"` adapters (once), handles messages Folio can
+    /// Starts `start = "launch"` adapters (once), handles messages text9000 can
     /// answer on its own, and returns the rest for the app.
     pub fn poll(&mut self) -> (Vec<Call>, Vec<String>) {
         let mut errors = Vec::new();
@@ -418,14 +420,14 @@ impl Host {
                     let message: Value = match serde_json::from_str(&line) {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("folio: {} sent invalid JSON: {e}", self.all[i].manifest.name);
+                            eprintln!("text9000: {} sent invalid JSON: {e}", self.all[i].manifest.name);
                             continue;
                         }
                     };
                     let id = message.get("id").cloned();
                     let Some(method) = message.get("method").and_then(Value::as_str).map(str::to_owned)
                     else {
-                        continue; // Folio never sends requests, so there are no replies to read.
+                        continue; // text9000 never sends requests, so there are no replies to read.
                     };
                     let params = message.get("params").cloned().unwrap_or(Value::Null);
                     match method.as_str() {
@@ -564,6 +566,7 @@ fn spawn(dir: &Path, run: &[String]) -> Result<Child, String> {
             .args(args)
             .current_dir(dir)
             // So adapters keep their own files next to Folio's.
+            .env("TEXT9000_CONFIG_DIR", crate::settings::config_dir())
             .env("FOLIO_CONFIG_DIR", crate::settings::config_dir())
             // Messages are UTF-8; Python on Windows would otherwise use the code page.
             .env("PYTHONIOENCODING", "utf-8")
@@ -587,7 +590,7 @@ pub fn adapters_dir() -> PathBuf {
     crate::settings::config_dir().join("adapters")
 }
 
-/// Installed adapters. Folio only looks in the config folder, so nothing
+/// Installed adapters. text9000 only looks in the config folder, so nothing
 /// appears unless someone installed it.
 pub fn discover() -> Vec<Adapter> {
     discover_in(&[crate::settings::config_dir().join("components"), adapters_dir()])
@@ -617,7 +620,7 @@ fn discover_in(dirs: &[PathBuf]) -> Vec<Adapter> {
                         removed: false,
                     });
                 }
-                Err(e) => eprintln!("folio: skipping adapter {}: {e}", folder.display()),
+                Err(e) => eprintln!("text9000: skipping adapter {}: {e}", folder.display()),
             }
         }
     }
@@ -670,7 +673,7 @@ pub fn unpack(source: &Path) -> Result<Unpacked, String> {
     if !source.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
         return Err("Choose an adapter's or plugin's .zip file, or its folder".into());
     }
-    let temp = std::env::temp_dir().join(format!("folio-install-{}", crate::safety::new_doc_id()));
+    let temp = std::env::temp_dir().join(format!("text9000-install-{}", crate::safety::new_doc_id()));
     let unpacked = std::fs::File::open(source)
         .map_err(|e| e.to_string())
         .and_then(|f| zip::ZipArchive::new(f).map_err(|e| e.to_string()))
@@ -715,7 +718,7 @@ pub fn stage(source: &Path) -> Result<Staged, String> {
 
 pub fn stage_unpacked(unpacked: Unpacked) -> Result<Staged, String> {
     let dir = find_manifest(&unpacked.root, &["adapter.toml", "component.toml"])?
-        .ok_or("This isn't a Folio adapter or plugin: there's no adapter.toml or plugin.toml in it")?;
+        .ok_or("This isn't a text9000 adapter or plugin: there's no adapter.toml or plugin.toml in it")?;
     let manifest = load_manifest(&dir).map_err(|e| format!("Its adapter.toml has a problem: {e}"))?;
     check_platform(&dir, &manifest)?;
     Ok(Staged {
@@ -802,7 +805,7 @@ pub fn install_into(staged: &Staged, root: &Path, discard: &dyn Fn(&Path) -> Res
     }
     copy_adapter(&staged.dir, &dest).map_err(|e| format!("Couldn't copy the adapter into place: {e}"))?;
     // Downloaded files are quarantined by macOS. The person chose to install
-    // this adapter, and Folio still asks before it first runs.
+    // this adapter, and text9000 still asks before it first runs.
     if cfg!(target_os = "macos") {
         let _ = Command::new("xattr")
             .args(["-dr", "com.apple.quarantine"])
@@ -852,10 +855,10 @@ pub fn uninstall(adapter: &Adapter) -> Result<(), String> {
 
 // ---- Approval ---------------------------------------------------------------
 //
-// The first time an adapter runs, Folio lists what it asks for and the user
+// The first time an adapter runs, text9000 lists what it asks for and the user
 // decides. The answer is remembered until the adapter asks for more.
 //
-// Permissions gate what an adapter can do *through Folio*. Adapters are
+// Permissions gate what an adapter can do *through text9000*. Adapters are
 // ordinary programs, so `network` is a declaration, not a sandbox: only
 // install adapters you trust, which is why they're open source.
 
@@ -1067,7 +1070,7 @@ for line in sys.stdin:
         host.run_command("A", "goal").unwrap();
         assert!(host.all[0].is_running());
 
-        // B is uninstalled and C installed while Folio is open.
+        // B is uninstalled and C installed while text9000 is open.
         crate::platform::move_into(&root.join("b"), &root.join(".trash")).unwrap();
         write_adapter(&root.join("c"), "C", ROUND_TRIP, "");
         host.sync(discover_in(std::slice::from_ref(&root)));
@@ -1083,7 +1086,7 @@ for line in sys.stdin:
     }
 
     /// A scripted adapter that starts a session, shows a peer, and reports
-    /// back when Folio routes undo to it.
+    /// back when text9000 routes undo to it.
     #[test]
     fn sessions_presence_and_undo_routing() {
         let dir = std::env::temp_dir().join(format!("folio-session-{}", std::process::id()));

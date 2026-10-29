@@ -1,4 +1,4 @@
-//! WebAssembly plugins: sandboxed extensions that run inside Folio (see
+//! WebAssembly plugins: sandboxed extensions that run inside text9000 (see
 //! `crates/folio_plugin`). This module connects them to the editor: it
 //! publishes the document as it changes, sends events, and turns what
 //! plugins send back into effects the app applies.
@@ -58,8 +58,8 @@ pub struct PluginCommand {
     pub label: String,
 }
 
-/// "Folio", or "Folio Lite" for builds without plugins.
-pub const EDITION: &str = if cfg!(feature = "wasi-plugins") { "Folio" } else { "Folio Lite" };
+/// "Folio", or "text9000 Lite" for builds without plugins.
+pub const EDITION: &str = if cfg!(feature = "wasi-plugins") { "text9000" } else { "text9000 Lite" };
 
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
@@ -70,7 +70,7 @@ pub fn about_text() -> String {
     let plugins = if cfg!(feature = "wasi-plugins") {
         "WebAssembly plugins (preview): on"
     } else {
-        "Folio Lite: no plugins; adapters only"
+        "text9000 Lite: no plugins; adapters only"
     };
     format!(
         "Bare when installed, insanely customizable.\n\n{plugins}\nConfig folder: {}",
@@ -359,7 +359,7 @@ mod disabled {
     use super::{Described, Effect, PanelLine, PluginCommand};
     use crate::editor::Editor;
 
-    const NO_PLUGINS: &str = "Folio Lite doesn't run plugins. Download Folio (not Lite) to use them";
+    const NO_PLUGINS: &str = "text9000 Lite doesn't run plugins. Download text9000 (not Lite) to use them";
 
     /// folio-lite: no plugin runtime.
     pub struct Plugins;

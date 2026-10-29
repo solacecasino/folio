@@ -1,7 +1,7 @@
 # folio_plugin
 
-Folio's embedded plugin runtime. Plugins are WebAssembly components
-(WASI Preview 2) run by [Wasmtime](https://wasmtime.dev) inside Folio,
+text9000's embedded plugin runtime. Plugins are WebAssembly components
+(WASI Preview 2) run by [Wasmtime](https://wasmtime.dev) inside text9000,
 each in a sandbox that grants nothing it didn't ask for.
 
 | | |
@@ -14,7 +14,7 @@ each in a sandbox that grants nothing it didn't ask for.
 ## A plugin
 
 ```text
-<config folder>/plugins/word-goals/      e.g. ~/.config/folio/plugins on Linux
+<config folder>/plugins/word-goals/      e.g. ~/.config/text9000/plugins on Linux
 ├── plugin.toml
 └── word_goals.wasm      cargo build --target wasm32-wasip2 --release
 ```

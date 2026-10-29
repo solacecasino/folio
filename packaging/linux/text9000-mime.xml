@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-text9000">
+    <comment>text9000 document</comment>
+    <glob pattern="*.t9k"/>
+    <icon name="text9000"/>
+  </mime-type>
   <mime-type type="application/x-folio">
     <comment>Folio document</comment>
     <glob pattern="*.folio"/>
-    <icon name="folio"/>
+    <icon name="text9000"/>
   </mime-type>
 </mime-info>

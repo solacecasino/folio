@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Builds Folio for this computer and packs the download into dist/.
+"""Builds text9000 for this computer and packs the download into dist/.
 
-    macOS    dist/Folio-<version>-macos-arm64.zip     Folio.app
-             (UNIVERSAL=1: Folio-<version>-macos-universal.zip, for Intel Macs too)
-    Windows  dist/Folio-<version>-windows-x64.zip     folio.exe, themes, README
-    Linux    dist/folio-<version>-linux-x64.tar.gz    folio, themes, install.sh
+    macOS    dist/text9000-<version>-macos-arm64.zip      text9000.app
+             (UNIVERSAL=1: text9000-<version>-macos-universal.zip, for Intel Macs too)
+    Windows  dist/text9000-<version>-windows-x64.zip      text9000.exe, themes, README
+    Linux    dist/text9000-<version>-linux-x64.tar.gz     text9000, themes, install.sh
 
---lite builds folio-lite instead: the same app without the WebAssembly
-plugin runtime (cargo's --no-default-features), named Folio-Lite-... .
+--lite builds text9000 Lite instead: the same app without the WebAssembly
+plugin runtime (cargo's --no-default-features), named text9000-lite-... .
 
 Usage: python3 scripts/package.py [--lite]
 """
@@ -54,7 +54,7 @@ def main():
     system = platform.system()
     lite = "--lite" in sys.argv
     flags = ["--no-default-features"] if lite else []
-    edition = "Lite-" if lite else ""
+    edition = "lite-" if lite else ""
     # Both editions can be packed one after the other into the same dist/.
     DIST.mkdir(exist_ok=True)
 
@@ -63,16 +63,16 @@ def main():
         print("+ sh scripts/bundle.sh", " ".join(flags), flush=True)
         subprocess.run(["sh", "scripts/bundle.sh"], cwd=ROOT, check=True, env=env)
         mac = "universal" if os.environ.get("UNIVERSAL") == "1" else arch()
-        out = DIST / f"Folio-{edition}{version}-macos-{mac}.zip"
+        out = DIST / f"text9000-{edition}{version}-macos-{mac}.zip"
         # ditto keeps the app bundle and its signature intact.
-        run("ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent", "target/Folio.app", out)
+        run("ditto", "-c", "-k", "--norsrc", "--noextattr", "--keepParent", "target/text9000.app", out)
 
     elif system == "Windows":
         run("cargo", "build", "--release", *flags)
-        stage = DIST / f"Folio-{edition}{version}-windows-{arch()}"
+        stage = DIST / f"text9000-{edition}{version}-windows-{arch()}"
         shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir()
-        shutil.copy2(ROOT / "target/release/folio.exe", stage)
+        shutil.copy2(ROOT / "target/release/text9000.exe", stage)
         shutil.copytree(ROOT / "themes", stage / "themes")
         shutil.copy2(ROOT / "packaging/windows/README.txt", stage)
         shutil.copy2(ROOT / "LICENSE", stage / "LICENSE.txt")
@@ -82,16 +82,16 @@ def main():
 
     elif system == "Linux":
         run("cargo", "build", "--release", *flags)
-        stage = DIST / f"folio-{edition.lower()}{version}-linux-{arch()}"
+        stage = DIST / f"text9000-{edition}{version}-linux-{arch()}"
         shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir()
-        shutil.copy2(ROOT / "target/release/folio", stage)
+        shutil.copy2(ROOT / "target/release/text9000", stage)
         shutil.copytree(ROOT / "themes", stage / "themes")
-        for f in ["install.sh", "folio.desktop", "folio-mime.xml"]:
+        for f in ["install.sh", "text9000.desktop", "text9000-mime.xml"]:
             shutil.copy2(ROOT / "packaging/linux" / f, stage)
-        shutil.copy2(ROOT / "assets/icon-256.png", stage / "folio.png")
+        shutil.copy2(ROOT / "assets/icon-256.png", stage / "text9000.png")
         shutil.copy2(ROOT / "LICENSE", stage)
-        os.chmod(stage / "folio", 0o755)
+        os.chmod(stage / "text9000", 0o755)
         os.chmod(stage / "install.sh", 0o755)
         out = DIST / f"{stage.name}.tar.gz"
         with tarfile.open(out, "w:gz") as t:

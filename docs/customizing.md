@@ -1,10 +1,10 @@
-# Customizing Folio
+# Customizing text9000
 
-Folio has no settings window. Everything is a text file in one folder:
+text9000 has no settings window. Everything is a text file in one folder:
 
 ```
-Folio/
-├── settings.toml     how Folio behaves and what's on screen
+text9000/
+├── settings.toml     how text9000 behaves and what's on screen
 ├── keys.toml         every keyboard shortcut
 ├── init.lua          your own commands, in Lua (optional)
 ├── themes/           how documents look
@@ -13,16 +13,16 @@ Folio/
 
 | | The folder |
 |---|---|
-| macOS | `~/Library/Application Support/Folio` |
-| Windows | `%APPDATA%\Folio` |
-| Linux | `$XDG_CONFIG_HOME/folio`, usually `~/.config/folio` |
+| macOS | `~/Library/Application Support/text9000` |
+| Windows | `%APPDATA%\text9000` |
+| Linux | `$XDG_CONFIG_HOME/text9000`, usually `~/.config/text9000` |
 
-Set `FOLIO_CONFIG_DIR` to use another folder, such as a portable setup on a
-USB stick. Open it with **Folio → Open Config Folder**. Folio also keeps
+Set `TEXT9000_CONFIG_DIR` (Folio's `FOLIO_CONFIG_DIR` works too) to use another folder, such as a portable setup on a
+USB stick. Open it with **text9000 → Open Config Folder**. text9000 also keeps
 `state.json` there (window size and place, File → Open Recent), which you
-don't need to edit. Folio reloads these files as soon
-as you save them; **Folio → Reload Config** (`Cmd+Shift+R`) forces a reload.
-If a file has a mistake, Folio keeps running with the defaults and shows the
+don't need to edit. text9000 reloads these files as soon
+as you save them; **text9000 → Reload Config** (`Cmd+Shift+R`) forces a reload.
+If a file has a mistake, text9000 keeps running with the defaults and shows the
 problem in red at the bottom of the window.
 
 Sharing that one folder shares your whole setup.
@@ -50,11 +50,11 @@ smart_dashes = true        # -- becomes —, ... becomes …
 ```
 
 - **Autosave** only saves documents that already have a file. Unsaved work
-  is kept in `recovery/` instead, and if Folio ever closes unexpectedly it
+  is kept in `recovery/` instead, and if text9000 ever closes unexpectedly it
   offers that work back the next time it opens.
 - **Versions** are written to `versions/` each time you save (and at most
   every five minutes while autosaving). **File → Browse Versions…** lists
-  them; Restore can be undone with Cmd+Z. They're ordinary `.folio` files.
+  them; Restore can be undone with Cmd+Z. They're ordinary `.t9k` files (versions Folio kept are `.folio`, and both are listed).
 - Right-click a word with a red underline for suggestions, **Learn
   Spelling** or **Ignore Spelling**.
 - Spell check uses the system's checker on macOS and Windows (add languages
@@ -64,9 +64,22 @@ smart_dashes = true        # -- becomes —, ... becomes …
   `dictionaries/` folder. Learned words go to `dictionaries/personal.txt`.
 - Cmd+Z right after a smart quote or dash gives back the plain character.
 
-Every line is optional. Folio writes `theme`, `zoom`, `show_status`,
+Every line is optional. text9000 writes `theme`, `zoom`, `show_status`,
 `show_panels` and `panels` back when you change them in the app, keeping your
 comments.
+
+### The 9000 apps
+
+text9000 opens videos, sound and photos in its sister apps, and finds them
+by itself. If it doesn't find one (say, unzipped somewhere unusual on
+Windows), name it:
+
+```toml
+[apps]
+splice9000 = "/path/to/splice9000"
+wave9000 = "/path/to/wave9000"
+grace9000 = "/path/to/grace9000"
+```
 
 ## keys.toml
 
@@ -98,6 +111,8 @@ menus show your shortcuts. `Cmd+/` lists every current binding.
 | `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
 | `lua <name>` | Run a command your `init.lua` registered |
+| `app <name>` | Open `splice9000`, `wave9000` or `grace9000` (the 9000 menu) |
+| `link-file` | Format → Link to a File…: links the selection to a file, which opens in its 9000 app |
 
 Themes add default `cmd+<digit>` shortcuts for styles with `key = <digit>`,
 and adapters add the `keys` in their manifest. Your `keys.toml` overrides both.
@@ -105,28 +120,28 @@ and adapters add the `keys` in their manifest. Your `keys.toml` overrides both.
 ## init.lua
 
 Put an `init.lua` in the folder to add commands of your own, written in
-[Lua 5.4](https://www.lua.org/manual/5.4/). Folio runs it once when it
+[Lua 5.4](https://www.lua.org/manual/5.4/). text9000 runs it once when it
 starts, again whenever you save it, and on **Reload Config** (`Cmd+Shift+R`).
-Without the file, Folio doesn't start Lua at all. Folio puts a working
+Without the file, text9000 doesn't start Lua at all. text9000 puts a working
 `init.lua.example` in the folder: rename it to `init.lua` to start from it.
 Registered commands appear in a **Scripts** menu, and `Cmd+/` lists the ones
 that don't have a key yet.
 
 ```lua
 -- Insert today's date where the caret is. The Scripts menu shows "Insert Date".
-folio.register_command("date", function()
-  folio.insert_text(os.date("%Y-%m-%d"))
+text9000.register_command("date", function()
+  text9000.insert_text(os.date("%Y-%m-%d"))
 end, "Insert Date")
 
 -- Make the whole document upper case.
-folio.register_command("shout", function()
-  folio.set_text(folio.get_text():upper())
+text9000.register_command("shout", function()
+  text9000.set_text(text9000.get_text():upper())
 end)
 
 -- Wrap the selection in quotes.
-folio.register_command("quote", function()
-  local _, _, text = folio.get_selection()
-  folio.insert_text("“" .. text .. "”")
+text9000.register_command("quote", function()
+  local _, _, text = text9000.get_selection()
+  text9000.insert_text("“" .. text .. "”")
 end)
 ```
 
@@ -140,20 +155,23 @@ Then bind them in `keys.toml`:
 
 | Function | Does |
 |---|---|
-| `folio.get_text()` | The document's text, paragraphs separated by `\n` |
-| `folio.set_text(text)` | Replaces all of it; `\n` starts a new paragraph |
-| `folio.get_cursor()` | Where the caret is: the number of characters before it, counting each paragraph break as one (0 is the start) |
-| `folio.set_cursor(index)` | Moves the caret there (past the end means the end) |
-| `folio.get_selection()` | The selection's start, end and text (start and end are equal, and the text empty, when nothing is selected) |
-| `folio.set_selection(from, to)` | Selects from `from` to `to`, with the caret at `to`; `set_selection(i)` selects nothing and puts the caret at `i` |
-| `folio.insert_text(text)` | Types `text` at the caret, replacing any selection |
-| `folio.register_command(name, function, label)` | Adds a command `lua <name>` for `keys.toml` and the Scripts menu. `label` is optional: what the menu shows instead of the name |
-| `folio.get_path()` | The document's file path, or `nil` if it hasn't been saved yet. Scripts still can't open it |
-| `folio.notify(text)` | Shows a short message in the status line (the first line, up to 200 characters) |
+| `text9000.get_text()` | The document's text, paragraphs separated by `\n` |
+| `text9000.set_text(text)` | Replaces all of it; `\n` starts a new paragraph |
+| `text9000.get_cursor()` | Where the caret is: the number of characters before it, counting each paragraph break as one (0 is the start) |
+| `text9000.set_cursor(index)` | Moves the caret there (past the end means the end) |
+| `text9000.get_selection()` | The selection's start, end and text (start and end are equal, and the text empty, when nothing is selected) |
+| `text9000.set_selection(from, to)` | Selects from `from` to `to`, with the caret at `to`; `set_selection(i)` selects nothing and puts the caret at `i` |
+| `text9000.insert_text(text)` | Types `text` at the caret, replacing any selection |
+| `text9000.register_command(name, function, label)` | Adds a command `lua <name>` for `keys.toml` and the Scripts menu. `label` is optional: what the menu shows instead of the name |
+| `text9000.get_path()` | The document's file path, or `nil` if it hasn't been saved yet. Scripts still can't open it |
+| `text9000.notify(text)` | Shows a short message in the status line (the first line, up to 200 characters) |
 
 Each command is one step for Undo. `print(...)` writes to **Help → Log**
 (`Cmd+Alt+L`), and so does every error, with the line it happened on; a
-broken script never stops Folio.
+broken script never stops text9000.
+
+The table is called `text9000`; `folio` is the same table under its old
+name, so scripts written for Folio keep working.
 
 Scripts can't touch your files, run programs or use the network: they get
 Lua's `string`, `table`, `math`, `utf8` and `coroutine` libraries and the clock
@@ -233,7 +251,7 @@ id = "goal"
 ```
 
 Right-click a panel's title to move it to another side or close it, and drag
-its edge to resize. Folio writes those changes back into settings.toml.
+its edge to resize. text9000 writes those changes back into settings.toml.
 `Cmd+\` hides or shows all panels.
 
 The outline lists `title`, `h1`, `h2` and `h3` paragraphs. A theme can change

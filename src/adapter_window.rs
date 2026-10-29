@@ -1,11 +1,10 @@
 //! The Adapters window: what's installed, what each adapter may do, its
-//! commands, and adding or removing adapters. Folio ships with none.
+//! commands, and adding or removing adapters. text9000 ships with none.
 
 use egui::{self, Color32, CornerRadius, Margin, RichText, Stroke, ViewportBuilder, ViewportId};
 
 use crate::adapters::{self, Host};
 use crate::keys::{Command, Keymap};
-use crate::theme::{Theme, color};
 
 pub const GET_ADAPTERS_URL: &str = "https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md";
 
@@ -24,16 +23,15 @@ pub enum Action {
 }
 
 /// Shows the window (a real second window) and returns what was clicked.
-pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) -> Vec<Action> {
+pub fn show(ctx: &egui::Context, host: &Host, keymap: &Keymap) -> Vec<Action> {
     let mut actions = Vec::new();
-    let colors = &theme.colors;
-    let bg = color(colors.panel.as_deref().unwrap_or(&colors.background));
-    let fg = color(colors.panel_text.as_deref().unwrap_or(&colors.status));
-    let strong = color(&colors.page);
-    let card = bg.lerp_to_gamma(fg, 0.07);
+    // The 9000 series' window colors, like the other apps' Adapters panels.
+    let pal = crate::series::PALETTE;
+    let (bg, fg, strong) = (pal.panel, pal.text, pal.text);
+    let card = pal.header;
 
     ctx.show_viewport_immediate(
-        ViewportId::from_hash_of("folio-adapters"),
+        ViewportId::from_hash_of("text9000-adapters"),
         ViewportBuilder::default()
             .with_title("Adapters")
             .with_inner_size([560.0, 640.0])
@@ -60,14 +58,15 @@ pub fn show(ctx: &egui::Context, host: &Host, theme: &Theme, keymap: &Keymap) ->
                         if ui.button("Browse Adapters").on_hover_text("Opens the adapter catalog in your browser").clicked() {
                             actions.push(Action::GetAdapters);
                         }
-                        if ui.button(RichText::new("Add Adapter…").strong()).clicked() {
+                        let add = egui::Button::new(RichText::new("Add Adapter…").strong().color(pal.on_accent)).fill(pal.accent);
+                        if ui.add(add).clicked() {
                             actions.push(Action::AddZip);
                         }
                     });
                 });
                 ui.label(
                     RichText::new(
-                        "Folio ships bare. Add only what you want; each adapter asks before it first runs. \
+                        "text9000 ships bare. Add only what you want; each adapter asks before it first runs. \
                          Drop an adapter's .zip here to add it.",
                     )
                     .small(),
@@ -132,7 +131,7 @@ fn empty_state(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
     ui.vertical_centered(|ui| {
         ui.label(RichText::new("No adapters yet").size(17.0).strong());
         ui.add_space(4.0);
-        ui.label("Folio is bare until you add one. Adapters add things like PDF export or live co-editing.");
+        ui.label("text9000 is bare until you add one. Adapters add things like PDF export or live co-editing.");
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.add_space((ui.available_width() - 250.0).max(0.0) / 2.0);

@@ -6,7 +6,7 @@
       "style": "title",
       "runs": [
         {
-          "text": "Welcome to Folio"
+          "text": "Welcome to text9000"
         }
       ]
     },
@@ -14,7 +14,7 @@
       "style": "body",
       "runs": [
         {
-          "text": "Folio starts "
+          "text": "text9000 starts "
         },
         {
           "text": "bare",
@@ -106,8 +106,8 @@
           "text": "Cmd-click (Ctrl-click on Windows and Linux) a link to open it, like "
         },
         {
-          "text": "Folio's home page",
-          "link": "https://github.com/solacecasino/folio"
+          "text": "text9000's home page",
+          "link": "https://github.com/solacecasino/text9000"
         },
         {
           "text": "."

@@ -1,16 +1,16 @@
-# Folio adapters
+# text9000 adapters
 
 > Most extensions should be [plugins](plugins.md): sandboxed WebAssembly that
-> runs inside Folio and can only reach what it declares. Adapters are for
+> runs inside text9000 and can only reach what it declares. Adapters are for
 > what a sandbox can't do, such as running external command-line tools or
 > keeping a background connection open.
 
-Folio ships bare. An **adapter** is an optional add-on you install on
+text9000 ships bare. An **adapter** is an optional add-on you install on
 purpose, like foobar2000's components. An adapter is an ordinary
-program in any language. Folio starts it only when it's needed and talks to it
+program in any language. text9000 starts it only when it's needed and talks to it
 with JSON messages, one per line, over stdin and stdout.
 
-Folio's own adapters live in their own repo,
+text9000's own adapters live in their own repo,
 [folio-adapters](https://github.com/solacecasino/folio-adapters):
 
 | Adapter | What it adds | Written in |
@@ -28,22 +28,22 @@ Adapters used to be called *components*. Old `components/` folders,
 
 ## Installing
 
-Folio ships with no adapters. Open **Folio → Adapters…** (`Cmd+Shift+A`),
+text9000 ships with no adapters. Open **text9000 → Adapters…** (`Cmd+Shift+A`),
 click **Add Adapter…**, and pick an adapter's `.zip` (or, below the list, a
-folder). Dropping a zip or folder on any Folio window does the same. Folio shows what it is and what it may do before adding it, and it
+folder). Dropping a zip or folder on any text9000 window does the same. text9000 shows what it is and what it may do before adding it, and it
 works right away, with no restart. The window lists each adapter with its
 permissions, a button for each command, and **Remove**.
 
-Installed adapters live in the `adapters` folder of Folio's config folder
+Installed adapters live in the `adapters` folder of text9000's config folder
 (**Show Folder** in the window). To package your own, zip its folder: a zip
 holding one folder that contains `adapter.toml`. **Remove** moves an adapter
 to the Trash (the Recycle Bin on Windows).
 
 Commands appear in the Adapters window. A command can also ask for a place in
-one of Folio's menus (`menu = "file"`, see below), and users can bind any
+one of text9000's menus (`menu = "file"`, see below), and users can bind any
 command to keys.
 
-The first time an adapter runs, Folio shows its name, author, license and
+The first time an adapter runs, text9000 shows its name, author, license and
 permissions and asks you to allow it. Your answer is remembered in
 `approvals.json` in the config folder until the adapter asks for more
 permissions.
@@ -57,7 +57,7 @@ The quickest way to make and share an adapter:
    [`folio.py`](https://github.com/solacecasino/folio-adapters/blob/main/sdk/python/folio.py),
    a one-file helper that handles the messages below, so a command is a few lines.
 2. **Try it** with **Add an adapter from a folder instead…** in the Adapters
-   window, or by dropping the folder on Folio. `.git`, `target/` and `dist/`
+   window, or by dropping the folder on text9000. `.git`, `target/` and `dist/`
    aren't copied.
 3. **Push a version tag** (`git tag v0.1.0 && git push origin v0.1.0`). The
    template's workflow publishes a release with correctly named zips: one
@@ -73,7 +73,7 @@ The quickest way to make and share an adapter:
 Release zips are named `<adapter>-<version>-<platform>.zip` (`macos-arm64`,
 `windows-x64`, `linux-x64`), or `<adapter>-<version>.zip` for adapters that
 run everywhere. If someone adds a zip built for another kind of computer,
-Folio tells them which one to download instead.
+text9000 tells them which one to download instead.
 
 ## `adapter.toml`
 
@@ -105,15 +105,15 @@ title = "Word Goal"
   (`./pdf-export`) is found there, and on Windows `.exe` is added if needed,
   so one `adapter.toml` works on every platform. On Windows, `python3` also
   tries the `py` launcher and `python`.
-- Folio sets `FOLIO_CONFIG_DIR` to its config folder, for adapters that keep
+- text9000 sets `FOLIO_CONFIG_DIR` to its config folder, for adapters that keep
   their own files (Folio Link keeps its identity in `folio-link/` there), and
   `PYTHONIOENCODING=utf-8`.
 - Compiled adapters are built once per platform. folio-adapters names each
   zip for its platform, such as `pdf-export-0.2.0-windows-x64.zip`.
 - `start = "command"` starts the adapter the first time you pick one of its
-  commands. `start = "launch"` starts it when Folio opens; use it only if the
+  commands. `start = "launch"` starts it when text9000 opens; use it only if the
   adapter needs events from the start.
-- When Folio quits it sends `shutdown`, then stops the program.
+- When text9000 quits it sends `shutdown`, then stops the program.
 - Whatever the program prints to **stderr** shows in **Help → Log**, with
   `log` messages and errors, so you can debug without a terminal.
 - `links = { join = "join" }` makes the adapter open `folio://join#...`
@@ -131,9 +131,9 @@ title = "Word Goal"
 |---|---|
 | `document.read` | `doc.get`, `doc.text`, `doc.print_model`, `snapshot` events |
 | `document.edit` | `doc.insert`, `doc.replace`, `doc.merge` |
-| `network` | Nothing through Folio; it tells the user the adapter goes online |
+| `network` | Nothing through text9000; it tells the user the adapter goes online |
 
-Permissions control what an adapter can do **through Folio**. An adapter is a
+Permissions control what an adapter can do **through text9000**. An adapter is a
 normal program running as you, so `network` is an honest declaration, not a
 sandbox. Only install adapters you trust; being open source is what lets
 people check.
@@ -146,17 +146,17 @@ Every message is one JSON object on one line, in UTF-8.
 - A **request** also has an `id`. The reply has the same `id` and either
   `result` or `error` (a string).
 
-Only adapters send requests. Folio sends notifications.
+Only adapters send requests. text9000 sends notifications.
 
-### Folio → adapter
+### text9000 → adapter
 
 | Method | Params | When |
 |---|---|---|
-| `initialize` | `folio` (version), `protocol` (currently `4`), `permissions` | Right after starting |
+| `initialize` | `text9000` and `folio` (the same version; `folio` is for adapters written for Folio), `protocol` (currently `4`), `permissions` | Right after starting |
 | `command` | `command`: the command `id`; `argument` when there is one, such as the `folio://` link that was opened | You picked one of its commands, or opened a link it handles |
 | `event` | `kind` plus the fields below | Something happened, if listed in `events` |
-| `undo`, `redo` | | During a shared session you started with `session.set` and `handles_undo: true`, instead of Folio's own undo |
-| `shutdown` | | Folio is quitting; exit soon |
+| `undo`, `redo` | | During a shared session you started with `session.set` and `handles_undo: true`, instead of text9000's own undo |
+| `shutdown` | | text9000 is quitting; exit soon |
 
 Events:
 
@@ -170,7 +170,7 @@ Events:
 Positions (`cursor`, `anchor`) are `{ "para": 0, "ch": 12 }`: a paragraph
 index and a character index within it.
 
-### Adapter → Folio
+### Adapter → text9000
 
 | Method | Params | Result | Permission |
 |---|---|---|---|
@@ -183,20 +183,20 @@ index and a character index within it.
 | `status.set` | `text` (string or `null`) | `null`. Shows text in the status line; `null` clears it | none |
 | `notify` | `text` | `null`. Shows a short message for a few seconds | none |
 | `panel.set` | `id`, `lines` | `null`. Fills one of your panels. Each line is a string, or `{ "text": ..., "command": ... }` for a clickable line that runs one of your commands | none |
-| `log` | `message` | Printed to Folio's stderr, for debugging | none |
+| `log` | `message` | Printed to text9000's stderr, for debugging | none |
 | `doc.print_model` | | The document laid out for printing (see below) | `document.read` |
-| `doc.merge` | `base_revision`, `paragraphs`, `cursor`, `anchor` | `{ "applied": bool }`. Replaces the document only if `base_revision` is the current revision; otherwise wait for the next `snapshot` and try again. Not an undo step, and it clears Folio's undo history (undo belongs to the session). | `document.edit` |
-| `session.set` | `active`, `handles_undo` | `null`. Starts or ends a shared session; with `handles_undo`, Folio sends you `undo`/`redo` | none |
+| `doc.merge` | `base_revision`, `paragraphs`, `cursor`, `anchor` | `{ "applied": bool }`. Replaces the document only if `base_revision` is the current revision; otherwise wait for the next `snapshot` and try again. Not an undo step, and it clears text9000's undo history (undo belongs to the session). | `document.edit` |
+| `session.set` | `active`, `handles_undo` | `null`. Starts or ends a shared session; with `handles_undo`, text9000 sends you `undo`/`redo` | none |
 | `presence.set` | `peers: [{ name, color, cursor, anchor }]` | `null`. Shows other people's carets and selections in their colors | none |
 | `ui.confirm` | `title`, `message` | `true` or `false` from a native Yes/No dialog | none |
-| `ui.prompt` | `title`, `message`, `default` | The text typed, or `null` if cancelled. Folio keeps working while it waits | none |
+| `ui.prompt` | `title`, `message`, `default` | The text typed, or `null` if cancelled. text9000 keeps working while it waits | none |
 | `ui.save_dialog` | `title`, `file_name`, `extension` | The chosen path, or `null` if cancelled. Starts next to the document. | none |
 
 Edits from adapters are single undo steps, so `Cmd+Z` undoes them.
 
 ### Document format
 
-The same shape as a `.folio` file:
+The same shape as a `.t9k` (or `.folio`) file:
 
 ```json
 {
@@ -212,7 +212,7 @@ The same shape as a `.folio` file:
 ```
 
 A list item has `"list": { "kind": "bullet", "level": 0 }` (or `"numbered"`);
-levels go from 0 to 8, and Folio numbers items itself. A linked run has
+levels go from 0 to 8, and text9000 numbers items itself. A linked run has
 `"link": "https://..."`.
 
 `style` is a paragraph style name from the active theme. Runs can have `bold`,
@@ -223,7 +223,7 @@ levels go from 0 to 8, and Folio numbers items itself. A linked run has
 `doc.print_model` returns the document exactly as it lays out on the page, so
 an adapter can print, export or preview it without knowing anything about
 fonts or line breaking. Units are PDF points from each page's top left, `y` is
-the text baseline, and every `font` is a file path you can read (Folio's
+the text baseline, and every `font` is a file path you can read (text9000's
 built-in font included).
 
 ```json
@@ -244,7 +244,7 @@ are underlines. `links` lists each line of a link as `{ "x", "y", "w", "h",
 
 ## Versions
 
-`initialize` says which protocol version Folio speaks. New versions only add
+`initialize` says which protocol version text9000 speaks. New versions only add
 things, so an adapter written for an older version keeps working.
 
 - **2** added panels (`panel.set`, `[[panels]]`).
@@ -265,4 +265,4 @@ things, so an adapter written for an older version keeps working.
 ← {"method":"notify","params":{"text":"12 paragraphs, 3 headings, 840 words"}}
 ```
 
-(`→` is Folio to the adapter, `←` is the adapter to Folio.)
+(`→` is text9000 to the adapter, `←` is the adapter to text9000.)

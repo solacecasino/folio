@@ -5,7 +5,7 @@
 //! libraries, a clock (`os.time`, `os.clock`, `os.date`), and the `folio`
 //! table. No files, no programs, no network, no loading other modules. Each
 //! run is capped at 1 second and the whole state at 32 MB, and every error
-//! goes to the Log instead of stopping Folio. Without an init.lua no Lua
+//! goes to the Log instead of stopping text9000. Without an init.lua no Lua
 //! state exists at all.
 
 use std::cell::{Cell, RefCell};
@@ -275,6 +275,9 @@ impl Scripts {
                     Ok(())
                 })?,
             )?;
+            // `text9000` is the table's name; `folio` is the same table, for
+            // scripts written for Folio.
+            lua.globals().set("text9000", folio.clone())?;
             lua.globals().set("folio", folio)?;
             f(lua)
         });
@@ -379,7 +382,8 @@ mod tests {
         let mut scripts = run(
             r#"
             folio.register_command("date", function() end, "Insert Date")
-            folio.register_command("plain", function() end)
+            text9000.register_command("plain", function() end)
+            assert(text9000 == folio, "one table, two names")
             assert(folio.get_path() == "/notes/draft.folio")
             folio.notify("Saved a copy\nsecond line is dropped")
             "#,

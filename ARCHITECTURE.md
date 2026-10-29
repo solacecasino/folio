@@ -1,6 +1,11 @@
-# Folio architecture
+# text9000 architecture
 
-Folio is a page-based document editor in Rust. Its interface is built with
+text9000 was called Folio until 3.0. Names that other things depend on kept
+Folio's spelling: the `"folio": 1` marker in documents, `folio://` links,
+the `folio` field adapters receive, the `folio:plugin` WIT package and the
+`folio_plugin` crate.
+
+text9000 is a page-based document editor in Rust. Its interface is built with
 `egui`, its window and input come from `winit`, and its pixels are drawn by
 the CPU (section 2, "Drawing"), with no graphics driver. It runs on macOS
 (Apple Silicon and Intel), Windows and Linux (x86-64) from one codebase. This document explains
@@ -23,7 +28,7 @@ reason about: the editor, its layout engine, its file format and the app shell a
 about 4,300 lines of Rust, and everything else hangs off two narrow extension interfaces
 (sections 3 and 4).
 
-Folio draws its own UI with an immediate-mode toolkit rather than embedding a
+text9000 draws its own UI with an immediate-mode toolkit rather than embedding a
 browser. The consequences, in practice:
 
 - **One process, one window per document.** No renderer process, no
@@ -34,7 +39,7 @@ browser. The consequences, in practice:
   thread wakes it. Nothing renders while nothing changes.
 - **Native where it matters.** The macOS menu bar is the real NSMenu
   (`muda`), spell checking uses each OS's own checker, dialogs are native
-  (`rfd`). Elsewhere Folio draws its own menus in the theme's colors.
+  (`rfd`). Elsewhere text9000 draws its own menus in the theme's colors.
 
 ### Configuration is files
 
@@ -43,9 +48,9 @@ in `keys.toml`, appearance in theme files, all in one config folder:
 
 | OS | Folder |
 |---|---|
-| macOS | `~/Library/Application Support/Folio` |
-| Windows | `%APPDATA%\Folio` |
-| Linux | `$XDG_CONFIG_HOME/folio` |
+| macOS | `~/Library/Application Support/text9000` |
+| Windows | `%APPDATA%\text9000` |
+| Linux | `$XDG_CONFIG_HOME/text9000` |
 
 `FOLIO_CONFIG_DIR` overrides it, which makes a portable setup a folder on a
 USB stick.
@@ -53,16 +58,16 @@ USB stick.
 Why files instead of a settings UI:
 
 - **The state is the file.** There is no second representation to drift out
-  of sync with what's on disk. What you see in the file is what Folio uses.
+  of sync with what's on disk. What you see in the file is what text9000 uses.
 - **They diff, merge and travel.** A setup can be kept in Git, shared as a
   folder, or reviewed line by line. Copying a colleague's `keys.toml` is
   copying a file.
 - **Live reload with a safe failure mode.** `settings::Watch` checks file
   modification times about once a second (no filesystem-notification
   dependency, no extra thread). A file that fails to parse doesn't half-apply:
-  Folio keeps the last good values and shows the parse error, with its line,
+  text9000 keeps the last good values and shows the parse error, with its line,
   in the status area until the file is fixed.
-- **Writes don't destroy hand edits.** When Folio itself changes a setting
+- **Writes don't destroy hand edits.** When text9000 itself changes a setting
   (the last theme, panel sizes), it edits the TOML with `toml_edit`, which
   keeps comments, ordering and formatting.
 
@@ -70,7 +75,7 @@ Things that are memory rather than preference — window placement, recent
 documents — go in a separate `state.json` so the files people edit stay
 theirs.
 
-Folio does write outside its folder in two places, both to make the OS hand
+text9000 does write outside its folder in two places, both to make the OS hand
 documents and links to it: per-user file and URL associations in the Windows
 registry (`HKCU\Software\Classes`, no administrator rights), and, when the
 user runs `install.sh`, a desktop entry and MIME type on Linux.
@@ -81,7 +86,7 @@ user runs `install.sh`, a desktop entry and MIME type on Linux.
   catalog and documentation are links that open in the user's browser.
   Extensions that go online must say so up front (sections 3, 4).
 - **No telemetry, no accounts, no cloud.**
-- **Open format.** A `.folio` file is pretty-printed JSON:
+- **Open format.** A `.t9k` file (`.folio` from before 3.0, the same format) is pretty-printed JSON:
 
   ```json
   {
@@ -95,14 +100,14 @@ user runs `install.sh`, a desktop entry and MIME type on Linux.
   }
   ```
 
-  It is readable without Folio, diffs cleanly, and is easy for other tools to
+  It is readable without text9000, diffs cleanly, and is easy for other tools to
   generate. New fields are additive and optional, so older builds open newer
   files and ignore what they don't know.
 - **A safety net that is also plain files.** Unsaved work is mirrored to
   `recovery/<pid>.json` two seconds after typing stops; a recovery file whose
-  process is no longer alive means a crash, and Folio offers it back on next
-  launch. Each save also writes a snapshot to `versions/<doc id>/<time>.folio`,
-  capped per document. All of it is ordinary `.folio` you can open directly.
+  process is no longer alive means a crash, and text9000 offers it back on next
+  launch. Each save also writes a snapshot to `versions/<doc id>/<time>.t9k`,
+  capped per document. All of it is ordinary `.t9k` you can open directly.
 
 ---
 
@@ -111,10 +116,11 @@ user runs `install.sh`, a desktop entry and MIME type on Linux.
 ```
 src/                     the app (one binary)
   main.rs                app state, frame loop, commands, file I/O
+  series.rs              the 9000 series: identity, colors, sister apps
   shell/                 the window: event loop, CPU drawing, screen buffer
   alloc.rs               large allocations straight from the OS (Unix)
   editor.rs              layout, pagination, input, painting, print model
-  doc.rs                 document model and .folio format
+  doc.rs                 document model and .t9k (.folio) format
   theme.rs               themes, fonts, list and link styling
   settings.rs keys.rs    settings.toml, keys.toml, live reload
   format.rs              the formatting language (%words%, $if, ...)
@@ -132,7 +138,7 @@ scripts/ packaging/      build and packaging
 
 ### The app
 
-`main.rs` holds one `Folio` struct and runs once per frame:
+`main.rs` holds one `text9000` struct and runs once per frame:
 
 1. drain commands from the menu bar and the keymap,
 2. service adapters and plugins (non-blocking polls),
@@ -154,9 +160,9 @@ Ctrl elsewhere, so a `keys.toml` is portable.
 
 ### Drawing
 
-Folio 1.x drew through eframe and the GPU (Metal, DirectX or Vulkan via
+text9000 1.x drew through eframe and the GPU (Metal, DirectX or Vulkan via
 wgpu). An empty window cost about 70 MB on a Retina Mac before any document
-was open: the graphics driver, plus two or three full-window buffers. Folio
+was open: the graphics driver, plus two or three full-window buffers. text9000
 2 draws with the CPU instead (`src/shell`), at 37–44 MB for the whole app:
 
 - **Only what changed is drawn.** egui still describes each frame as shapes.
@@ -166,8 +172,8 @@ was open: the graphics driver, plus two or three full-window buffers. Folio
   disappeared or changed are cleared and drawn again. Typing a letter redraws
   a line and the caret, about 30,000 pixels and well under a millisecond. A
   full Retina window takes 7–11 ms.
-- **One screen buffer.** On macOS the window shows an IOSurface that Folio
-  draws into directly, so neither Folio nor the window server keeps a second
+- **One screen buffer.** On macOS the window shows an IOSurface that text9000
+  draws into directly, so neither text9000 nor the window server keeps a second
   copy. On Windows and X11, softbuffer keeps one buffer too; Wayland
   alternates two, and the damage of the frame before is redrawn as well.
 - **Textures live once.** The text atlas (letters already drawn, capped at
@@ -206,11 +212,11 @@ results to the GitHub release.
 
 | | Ships as | Notes |
 |---|---|---|
-| macOS | `Folio.app` in a zip | ad-hoc signed (not notarized) |
-| Windows | `folio.exe` + `themes/` in a zip | runs from any folder; icon embedded at build |
+| macOS | `text9000.app` in a zip | ad-hoc signed (not notarized) |
+| Windows | `text9000.exe` + `themes/` in a zip | runs from any folder; icon embedded at build |
 | Linux | binary + `themes/` + `install.sh` in a tarball | needs the usual X11/Wayland and GL libraries |
 
-Each comes in two editions from the same source: **Folio** and **Folio
+Each comes in two editions from the same source: **text9000** and **text9000
 Lite**, which is built with `--no-default-features` and leaves out the
 WebAssembly runtime (Wasmtime is the bulk of the binary). The `wasi-plugins`
 feature is the only difference; `plugins.rs` has the same API in both builds,
@@ -224,7 +230,7 @@ uninstalling is deleting files.
 
 ## 3. Plugins: sandboxed WebAssembly
 
-`crates/folio_plugin` runs third-party code inside Folio's process. Plugins
+`crates/folio_plugin` runs third-party code inside text9000's process. Plugins
 are WebAssembly components (WASI Preview 2) executed by Wasmtime; the
 contract is `wit/folio-plugin.wit`.
 
@@ -237,9 +243,9 @@ editor. Scripting languages embedded in-process need their own sandbox and
 usually leak capabilities through their standard library. WebAssembly gives:
 
 - **Memory isolation by construction.** A plugin addresses only its own
-  linear memory; it cannot read Folio's.
+  linear memory; it cannot read text9000's.
 - **Capabilities, not ambient authority.** A component can only call what it
-  imports, and Folio decides what each import does. There is no syscall
+  imports, and text9000 decides what each import does. There is no syscall
   escape hatch.
 - **Any source language** that targets `wasm32-wasip2` (Rust, C, Go,
   JavaScript, Python through componentize-py).
@@ -259,7 +265,7 @@ What a plugin can do is exactly the WIT interface:
   `selection-changed`.
 
 Plugins can't draw on the page or open windows; that is deliberate, since
-it keeps them from spoofing Folio's own UI.
+it keeps them from spoofing text9000's own UI.
 
 Capabilities are declared in `plugin.toml` and default to nothing:
 
@@ -270,7 +276,7 @@ filesystem = [{ path = "~/Notes", access = "read" }]   # visible as /Notes
 network = ["api.example.com:443"]                      # or "any"
 ```
 
-Folio shows this list before installing. Enforcement happens in two layers:
+text9000 shows this list before installing. Enforcement happens in two layers:
 
 1. **Document access** is checked on every host call
    (`host.rs`). A plugin without `document.read` gets `missing-capability`.
@@ -331,11 +337,11 @@ cannot do: running external tools, holding long-lived network connections
 
 ### The protocol
 
-An adapter is a folder with `adapter.toml` and a program. Folio starts the
+An adapter is a folder with `adapter.toml` and a program. text9000 starts the
 program on first use, in its folder, and exchanges JSON, one object per line,
 over stdin and stdout (`docs/adapters.md`). A message with an `id` is a
 request and gets a reply with the same `id`; without one it's a notification.
-Folio only sends notifications (`initialize`, `command`, `event`,
+text9000 only sends notifications (`initialize`, `command`, `event`,
 `shutdown`); adapters send requests (`doc.get`, `doc.insert`,
 `doc.set_list`, `ui.prompt`, ...).
 
@@ -374,7 +380,7 @@ An adapter is a separate OS process, so:
 
 What an adapter is not is sandboxed. It runs with the user's permissions.
 Its declared permissions (`document.read`, `document.edit`, `network`) gate
-what it can ask *Folio* to do, are shown before it first runs, and are
+what it can ask *text9000* to do, are shown before it first runs, and are
 remembered per adapter until they change, but they cannot stop the program
 from touching the filesystem on its own. That trade is the reason both
 extension types exist: plugins for untrusted code, adapters for trusted code
@@ -387,16 +393,16 @@ A reusable GitHub workflow builds and names them, and the
 [catalog](https://github.com/solacecasino/folio-adapters/blob/main/CATALOG.md)
 is generated from each listed repository's latest release, reading the
 manifest inside the actual zip, so the permissions shown in the catalog are
-the ones Folio will ask about. Folio refuses a zip built for another OS and
+the ones text9000 will ask about. text9000 refuses a zip built for another OS and
 names the right one.
 
 ---
 
 ## 5. Layout and pagination
 
-Folio lays out real pages — size, margins, page breaks — on its own, with no
+text9000 lays out real pages — size, margins, page breaks — on its own, with no
 HTML engine. Text shaping and line breaking come from `epaint` (egui's
-renderer); everything above the line is Folio's (`editor.rs`).
+renderer); everything above the line is text9000's (`editor.rs`).
 
 ### Paragraphs to rows
 
@@ -467,5 +473,5 @@ into a PDF with `krilla`, embedding the theme's fonts and adding link
 annotations. What prints is what was on screen, line for line.
 
 One consequence: a character the theme's font lacks is drawn on screen with
-the fallback font but has no glyph in the PDF. Folio doesn't yet carry the
+the fallback font but has no glyph in the PDF. text9000 doesn't yet carry the
 fallback chain into the print model.

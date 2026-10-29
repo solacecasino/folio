@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=text9000
+GenericName=Document Editor
+Comment=A bare, modular document editor
+Exec=text9000 %u
+Icon=text9000
+Terminal=false
+Categories=Office;WordProcessor;
+Keywords=document;writing;editor;folio;
+MimeType=application/x-text9000;application/x-folio;x-scheme-handler/text9000;x-scheme-handler/folio;
+StartupWMClass=text9000

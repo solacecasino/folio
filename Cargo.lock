@@ -1350,40 +1350,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "folio"
-version = "2.0.4"
-dependencies = [
- "accesskit_winit",
- "egui",
- "egui-winit",
- "folio_plugin",
- "libc",
- "memmap2",
- "mlua",
- "muda",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-core-foundation",
- "objc2-foundation 0.3.2",
- "objc2-quartz-core 0.3.2",
- "png",
- "raw-window-handle",
- "rfd",
- "serde",
- "serde_json",
- "softbuffer",
- "spellbook",
- "toml 0.9.12+spec-1.1.0",
- "toml_edit 0.25.17+spec-1.1.0",
- "trash",
- "ttf-parser",
- "windows",
- "winit",
- "winresource",
- "zip",
-]
-
-[[package]]
 name = "folio_plugin"
 version = "0.1.0"
 dependencies = [
@@ -3816,6 +3782,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "text9000"
+version = "3.0.0"
+dependencies = [
+ "accesskit_winit",
+ "egui",
+ "egui-winit",
+ "folio_plugin",
+ "libc",
+ "memmap2",
+ "mlua",
+ "muda",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "png",
+ "raw-window-handle",
+ "rfd",
+ "serde",
+ "serde_json",
+ "softbuffer",
+ "spellbook",
+ "toml 0.9.12+spec-1.1.0",
+ "toml_edit 0.25.17+spec-1.1.0",
+ "trash",
+ "ttf-parser",
+ "windows",
+ "winit",
+ "winresource",
+ "zip",
 ]
 
 [[package]]

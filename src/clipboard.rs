@@ -1,10 +1,10 @@
-//! Copying inside Folio keeps formatting, styles, list items and links.
+//! Copying inside text9000 keeps formatting, styles, list items and links.
 //!
 //! The system clipboard gets plain text, so pasting into other apps works
-//! as before. Alongside it Folio keeps the formatted copy in
+//! as before. Alongside it text9000 keeps the formatted copy in
 //! `cache/clipboard.json` in its config folder, tagged with that plain text.
-//! When a paste's text matches, Folio uses the formatted copy, which also
-//! works between Folio windows (they're separate processes). Anything copied
+//! When a paste's text matches, text9000 uses the formatted copy, which also
+//! works between text9000 windows (they're separate processes). Anything copied
 //! elsewhere since won't match, and pastes as plain text.
 
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ pub fn remember(text: &str, fragment: &Document) {
     let _ = std::fs::write(path, serde_json::to_string(&copied).expect("serializes"));
 }
 
-/// The formatted version of `pasted`, if it's what Folio last copied.
+/// The formatted version of `pasted`, if it's what text9000 last copied.
 pub fn formatted(pasted: &str) -> Option<Document> {
     let copied: Copied = serde_json::from_str(&std::fs::read_to_string(path()).ok()?).ok()?;
     // Some systems change line endings on the way through the clipboard.

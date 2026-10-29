@@ -1,6 +1,6 @@
 //! Folio's log: what adapters and plugins print, their errors, and Folio's
 //! own messages, shown in **Help → Log** so people writing adapters and
-//! plugins don't need to start Folio from a terminal. Lines are also
+//! plugins don't need to start text9000 from a terminal. Lines are also
 //! written to stderr as before.
 
 use std::collections::VecDeque;
@@ -31,10 +31,10 @@ static LINES: Mutex<VecDeque<Line>> = Mutex::new(VecDeque::new());
 /// Adds a line. Safe to call from any thread.
 pub fn push(source: &str, level: Level, text: impl Into<String>) {
     let text = text.into();
-    eprintln!("folio: {source}: {text}");
+    eprintln!("text9000: {source}: {text}");
     // FOLIO_LOG_FILE also appends every line to a file, for debugging a
-    // Folio started by the system (from a link or Finder).
-    if let Some(path) = std::env::var_os("FOLIO_LOG_FILE") {
+    // text9000 started by the system (from a link or Finder).
+    if let Some(path) = crate::series::env("LOG_FILE") {
         use std::io::Write;
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
             let _ = writeln!(f, "{source}: {text}");
@@ -81,7 +81,7 @@ pub struct Window {
 
 impl Window {
     /// Draws the window; returns false when it was closed. `debug_info`
-    /// describes this Folio for bug reports (Copy Debug Info).
+    /// describes this text9000 for bug reports (Copy Debug Info).
     pub fn show(&mut self, ctx: &egui::Context, debug_info: &dyn Fn() -> String) -> bool {
         use egui::{self, Color32, RichText};
         let mut open = true;
@@ -149,7 +149,7 @@ fn crash_file() -> std::path::PathBuf {
     crate::settings::config_dir().join("crash.txt")
 }
 
-/// Writes what went wrong to `crash.txt` in the config folder when Folio
+/// Writes what went wrong to `crash.txt` in the config folder when text9000
 /// panics, so the next start can show it and Copy Debug Info includes it.
 /// A crash otherwise leaves nothing to report.
 pub fn catch_crashes() {
@@ -166,12 +166,12 @@ pub fn catch_crashes() {
         let file = crash_file();
         let _ = std::fs::create_dir_all(file.parent().expect("has parent"));
         let _ = std::fs::write(file, crate::platform::hide_home(&text));
-        push("Folio", Level::Error, format!("crashed: {info}"));
+        push("text9000", Level::Error, format!("crashed: {info}"));
         default(info);
     }));
 }
 
-/// The crash from last time, if Folio crashed, once: the file is removed.
+/// The crash from last time, if text9000 crashed, once: the file is removed.
 /// (No backtrace: release builds are stripped, and the message names the
 /// line in Folio's source.)
 pub fn last_crash() -> Option<String> {

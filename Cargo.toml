@@ -1,20 +1,20 @@
 [package]
-name = "folio"
-version = "2.0.4"
+name = "text9000"
+version = "3.0.0"
 edition = "2024"
 description = "A document editor that ships bare and is endlessly customizable through themes and adapters."
 license = "MIT"
-repository = "https://github.com/solacecasino/folio"
+repository = "https://github.com/solacecasino/text9000"
 
 [features]
-# WebAssembly plugins (Wasmtime). Build without it for folio-lite:
+# WebAssembly plugins (Wasmtime). Build without it for text9000 Lite:
 # cargo build --release --no-default-features
 default = ["wasi-plugins"]
 wasi-plugins = ["dep:folio_plugin"]
 
 [dependencies]
 memmap2 = "0.9.12"
-# init.lua scripting. Lua 5.4 is compiled in, so nothing extra is needed to run Folio.
+# init.lua scripting. Lua 5.4 is compiled in, so nothing extra is needed to run text9000.
 mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
 # The interface (egui), the window and input (winit, egui-winit), and the
 # pixels: drawn by the CPU (src/shell), so no graphics driver is loaded.
@@ -39,8 +39,8 @@ zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.21.2"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSSpellChecker"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSRange", "NSArray", "NSDictionary", "NSValue"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSSpellChecker", "NSWorkspace"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSRange", "NSArray", "NSDictionary", "NSValue", "NSURL"] }
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CALayer", "CATransaction", "objc2-core-foundation"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
 

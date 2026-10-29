@@ -4,7 +4,7 @@
 //! On macOS they're the native menu bar. Menu shortcuts are taken by macOS
 //! before the window sees the key press, so every item maps to a
 //! [`Command`] the app runs itself. On Windows and Linux the same menus are
-//! drawn in the window's top strip, in the theme's colors, and shortcuts go
+//! drawn in the window's top strip, in the 9000 series' colors, and shortcuts go
 //! through the keymap as usual.
 //!
 //! Copy, cut and paste are left out on purpose: those keys go straight to the
@@ -22,6 +22,8 @@ pub struct MenuContent<'a> {
     pub plugins: Vec<crate::plugins::PluginCommand>,
     /// Commands init.lua registered (name, label), shown in a Scripts menu.
     pub scripts: Vec<(String, String)>,
+    /// The other 9000-series apps that are installed, for the 9000 menu.
+    pub apps: Vec<String>,
     /// Documents for File → Open Recent, newest first.
     pub recent: Vec<std::path::PathBuf>,
     pub keymap: &'a Keymap,
@@ -91,9 +93,10 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
 
     let mut format = vec![b(Builtin::Bold), b(Builtin::Italic), b(Builtin::Underline), Entry::Separator];
     format.extend(content.styles.iter().map(|s| Entry::Item(Command::Style(s.clone()), s.clone())));
+    format.extend([Entry::Separator, b(Builtin::LinkFile)]);
 
     let mut all = vec![
-        Section { key: "app", title: "Folio", entries: app },
+        Section { key: "app", title: "text9000", entries: app },
         Section {
             key: "file",
             title: "File",
@@ -191,6 +194,23 @@ fn sections(content: &MenuContent<'_>) -> Vec<Section> {
         });
     }
 
+    // The rest of the series, when any of it is installed.
+    if !content.apps.is_empty() {
+        all.push(Section {
+            key: "9000",
+            title: "9000",
+            entries: content
+                .apps
+                .iter()
+                .map(|name| {
+                    let command = Command::App(name.clone());
+                    let label = command.label();
+                    Entry::Item(command, label)
+                })
+                .collect(),
+        });
+    }
+
     if !content.scripts.is_empty() {
         all.push(Section {
             key: "scripts",
@@ -231,7 +251,6 @@ mod native {
 
     use super::{Entry, MenuContent, SystemItem, sections};
     use crate::keys::Command;
-    use crate::theme::Theme;
 
     pub struct MenuBar {
         // Dropping the menu removes it from the menu bar, so keep it alive.
@@ -294,7 +313,7 @@ mod native {
         }
 
         /// The macOS menu bar draws itself.
-        pub fn show(&mut self, _ui: &mut egui::Ui, _rect: egui::Rect, _theme: &Theme) {}
+        pub fn show(&mut self, _ui: &mut egui::Ui, _rect: egui::Rect, _pal: &crate::series::Palette) {}
     }
 
     /// Adds entries to a menu; nested menus recurse.
@@ -316,7 +335,7 @@ mod native {
                     Box::new(nested)
                 }
                 Entry::Separator => Box::new(PredefinedMenuItem::separator()),
-                Entry::About => Box::new(PredefinedMenuItem::about(Some("About Folio"), Some(about(icon)))),
+                Entry::About => Box::new(PredefinedMenuItem::about(Some("About text9000"), Some(about(icon)))),
                 Entry::System(s) => Box::new(match s {
                     SystemItem::Hide => PredefinedMenuItem::hide(None),
                     SystemItem::HideOthers => PredefinedMenuItem::hide_others(None),
@@ -345,7 +364,6 @@ mod drawn {
 
     use super::{Entry, MenuContent, sections};
     use crate::keys::Command;
-    use crate::theme::{Theme, color};
 
     /// An entry with its shortcut text.
     struct Shown {
@@ -400,11 +418,8 @@ mod drawn {
         }
 
         /// Draws the menus in the window's top strip.
-        pub fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect, theme: &Theme) {
-            let colors = &theme.colors;
-            let bg = color(&colors.background);
-            let fg = color(&colors.status);
-            ui.painter().rect_filled(rect, 0.0, bg);
+        pub fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect, pal: &crate::series::Palette) {
+            let fg = pal.text;
             let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(egui::vec2(6.0, 0.0))));
             bar.visuals_mut().override_text_color = Some(fg);
             // Hovered and open menu titles get a faint tint of the text color,
@@ -430,9 +445,9 @@ mod drawn {
                         [self.icon_data.width as usize, self.icon_data.height as usize],
                         &self.icon_data.rgba,
                     );
-                    ui.ctx().load_texture("folio-icon", image, egui::TextureOptions::LINEAR)
+                    ui.ctx().load_texture("text9000-icon", image, egui::TextureOptions::LINEAR)
                 });
-                egui::Window::new("About Folio")
+                egui::Window::new("About text9000")
                     .open(&mut self.about_open)
                     .collapsible(false)
                     .resizable(false)

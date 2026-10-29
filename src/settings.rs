@@ -1,8 +1,8 @@
-//! The config folder and `settings.toml`. Folio has no settings window: every
+//! The config folder and `settings.toml`. text9000 has no settings window: every
 //! preference is a line in a text file you can edit, copy and share.
 //!
-//! Everything lives in one folder (`~/Library/Application Support/Folio` on
-//! macOS, `%APPDATA%\Folio` on Windows, `~/.config/folio` on Linux):
+//! Everything lives in one folder (`~/Library/Application Support/text9000` on
+//! macOS, `%APPDATA%\text9000` on Windows, `~/.config/folio` on Linux):
 //! `settings.toml`, `keys.toml`, `themes/`, `adapters/`. Sharing that one
 //! folder shares a whole setup.
 
@@ -12,12 +12,10 @@ use std::time::SystemTime;
 
 use serde::Deserialize;
 
-/// `FOLIO_CONFIG_DIR` points Folio at another folder, e.g. a portable setup
-/// on a USB stick.
+/// `TEXT9000_CONFIG_DIR` (or Folio's `FOLIO_CONFIG_DIR`) points text9000 at
+/// another folder, e.g. a portable setup on a USB stick.
 pub fn config_dir() -> PathBuf {
-    std::env::var_os("FOLIO_CONFIG_DIR")
-        .filter(|v| !v.is_empty())
-        .map_or_else(crate::platform::default_config_dir, PathBuf::from)
+    crate::series::env("CONFIG_DIR").map_or_else(crate::platform::default_config_dir, PathBuf::from)
 }
 
 pub fn settings_path() -> PathBuf {
@@ -53,6 +51,9 @@ pub struct Settings {
     pub smart_quotes: bool,
     /// -- becomes — and ... becomes …
     pub smart_dashes: bool,
+    /// Where the 9000-series apps are, when text9000 can't find them itself
+    /// (`splice9000 = "/path/to/splice9000"`).
+    pub apps: BTreeMap<String, String>,
 }
 
 pub const DEFAULT_STATUS: &str =
@@ -75,13 +76,14 @@ impl Default for Settings {
             spell_language: String::new(),
             smart_quotes: true,
             smart_dashes: true,
+            apps: BTreeMap::new(),
         }
     }
 }
 
 const KNOWN_KEYS: &[&str] = &[
     "theme", "zoom", "show_status", "show_panels", "status", "title", "panels", "autosave", "versions",
-    "spellcheck", "spell_language", "smart_quotes", "smart_dashes",
+    "spellcheck", "spell_language", "smart_quotes", "smart_dashes", "apps",
 ];
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -141,7 +143,7 @@ impl Side {
 }
 
 /// Loads settings, returning problems to show the user instead of failing:
-/// a broken file falls back to defaults so Folio always opens.
+/// a broken file falls back to defaults so text9000 always opens.
 pub fn load() -> (Settings, Vec<String>) {
     let Ok(src) = std::fs::read_to_string(settings_path()) else {
         return (Settings::default(), Vec::new());
@@ -183,7 +185,7 @@ fn edit(change: impl FnOnce(&mut toml_edit::DocumentMut)) -> Result<(), String> 
     std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())
 }
 
-/// Saves one setting, e.g. the theme after Cmd+T, so Folio remembers it.
+/// Saves one setting, e.g. the theme after Cmd+T, so text9000 remembers it.
 pub fn save_value(key: &str, value: impl Into<toml_edit::Value>) -> Result<(), String> {
     let value = value.into();
     edit(|doc| doc[key] = toml_edit::value(value))
@@ -247,8 +249,8 @@ pub fn write_examples() {
     }
 }
 
-const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional; delete a line to get the default.
-# Folio reloads this file as soon as you save it.
+const EXAMPLE_SETTINGS: &str = r#"# text9000 settings. Everything here is optional; delete a line to get the default.
+# text9000 reloads this file as soon as you save it.
 # The formatting language is described in docs/customizing.md.
 
 # theme = "Paper"
@@ -263,13 +265,18 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 # smart_quotes = true      # "curly" quotes as you type
 # smart_dashes = true      # -- becomes — and ... becomes …
 
+# The other 9000-series apps: text9000 finds splice9000, wave9000 and
+# grace9000 by itself; name a path here only if it doesn't.
+# [apps]
+# splice9000 = "/path/to/splice9000"
+
 # Status line and window title. Fields look like %words%; [ ] hides a part
 # when its fields are empty; $if, $plural, $upper and friends are functions.
 # status = "[%adapter_status%   ]%theme%   %pages% $plural(%pages%,page)   %words% $plural(%words%,word)   %zoom%'%'"
 # title = "%file%$if(%dirty%, •,)"
 
 # Panels are off until you add some. Right-click a panel's title to move or
-# close it; drag its edge to resize. Folio writes those changes back here.
+# close it; drag its edge to resize. text9000 writes those changes back here.
 #
 # [[panels]]
 # kind = "outline"        # clickable headings
@@ -292,9 +299,9 @@ const EXAMPLE_SETTINGS: &str = r#"# Folio settings. Everything here is optional;
 # id = "goal"
 "#;
 
-const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lines override the defaults;
-# bind a key to "none" to free it. Folio reloads this file when you save it.
-# Press Cmd+/ (Ctrl+/ on Windows and Linux) in Folio to see every binding.
+const EXAMPLE_KEYS: &str = r#"# text9000 key bindings: "keys" = "command". Your lines override the defaults;
+# bind a key to "none" to free it. text9000 reloads this file when you save it.
+# Press Cmd+/ (Ctrl+/ on Windows and Linux) in text9000 to see every binding.
 #
 # Modifiers: cmd, shift, alt (or option), ctrl. On Windows and Linux, cmd
 # means Ctrl, so the same keys.toml works on every computer.
@@ -308,25 +315,25 @@ const EXAMPLE_KEYS: &str = r#"# Folio key bindings: "keys" = "command". Your lin
 # "cmd+alt+g" = 'adapter "Writing Tools" goal'
 "#;
 
-pub const EXAMPLE_LUA: &str = r#"-- Folio runs init.lua (not this file) at startup, when you save it, and on
+pub const EXAMPLE_LUA: &str = r#"-- text9000 runs init.lua (not this file) at startup, when you save it, and on
 -- Reload Config. To use this example, rename it to init.lua. The functions
 -- are described in docs/customizing.md; errors and print() go to Help → Log.
 -- Scripts can't touch files, programs or the network.
 
 -- Insert today's date where the caret is.
 -- The third argument is what the Scripts menu shows.
-folio.register_command("date", function()
-  folio.insert_text(os.date("%Y-%m-%d"))
+text9000.register_command("date", function()
+  text9000.insert_text(os.date("%Y-%m-%d"))
 end, "Insert Date")
 
 -- Wrap the selection in curly quotes.
-folio.register_command("quote", function()
-  local _, _, text = folio.get_selection()
+text9000.register_command("quote", function()
+  local _, _, text = text9000.get_selection()
   if text == "" then
-    folio.notify("Select some text to quote first")
+    text9000.notify("Select some text to quote first")
     return
   end
-  folio.insert_text("“" .. text .. "”")
+  text9000.insert_text("“" .. text .. "”")
 end, "Quote Selection")
 
 -- Commands appear in the Scripts menu. Give them keys in keys.toml:
@@ -375,7 +382,7 @@ impl Watch {
         changed
     }
 
-    /// Call after Folio writes a config file itself, so that write doesn't
+    /// Call after text9000 writes a config file itself, so that write doesn't
     /// count as a change.
     pub fn forget_own_writes(&mut self) {
         self.seen = self.scan();

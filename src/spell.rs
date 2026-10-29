@@ -1,5 +1,5 @@
 //! Spell checking with the system's own spell checker where there is one,
-//! so Folio uses the same dictionaries, languages and learned words as the
+//! so text9000 uses the same dictionaries, languages and learned words as the
 //! other apps on the computer:
 //!
 //! - macOS: the system spell checker (NSSpellChecker).
@@ -57,7 +57,7 @@ impl Speller {
         self.cache.clear();
     }
 
-    /// Stops flagging a word until Folio quits.
+    /// Stops flagging a word until text9000 quits.
     pub fn ignore(&mut self, word: &str) {
         self.backend.ignore(word);
         self.cache.clear();
@@ -175,7 +175,7 @@ mod backend {
                     })
             };
             if checker.is_none() {
-                eprintln!("folio: no Windows spell checker for \"{language}\"");
+                eprintln!("text9000: no Windows spell checker for \"{language}\"");
             }
             Self { checker }
         }
@@ -289,7 +289,7 @@ mod backend {
             let dict = find_dictionary(language).and_then(|(aff, dic)| {
                 let aff = std::fs::read_to_string(aff).ok()?;
                 let dic = std::fs::read_to_string(dic).ok()?;
-                Dictionary::new(&aff, &dic).map_err(|e| eprintln!("folio: dictionary: {e}")).ok()
+                Dictionary::new(&aff, &dic).map_err(|e| eprintln!("text9000: dictionary: {e}")).ok()
             });
             let dict = dict.map(|mut d| {
                 for word in std::fs::read_to_string(personal_path()).unwrap_or_default().lines() {
@@ -299,7 +299,7 @@ mod backend {
             });
             if dict.is_none() {
                 eprintln!(
-                    "folio: no Hunspell dictionary for \"{language}\"; install one (e.g. hunspell-en-us) \
+                    "text9000: no Hunspell dictionary for \"{language}\"; install one (e.g. hunspell-en-us) \
                      or put <lang>.aff and <lang>.dic in {}",
                     crate::settings::config_dir().join("dictionaries").display()
                 );

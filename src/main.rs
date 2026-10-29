@@ -1,5 +1,5 @@
-//! Folio: a document editor that starts bare and gets out of the way.
-//! How documents look comes from theme files; how Folio behaves comes from
+//! text9000: a document editor that starts bare and gets out of the way.
+//! How documents look comes from theme files; how text9000 behaves comes from
 //! settings.toml and keys.toml; everything extra comes from adapters.
 
 // Release builds on Windows are window apps, with no console window.
@@ -26,6 +26,7 @@ mod plugins;
 mod safety;
 mod scripts;
 mod settings;
+mod series;
 mod shell;
 mod spell;
 mod state;
@@ -56,7 +57,7 @@ pub const ICON_PNG: &[u8] = include_bytes!("../assets/icon-256.png");
 /// on Windows and Linux).
 const TITLEBAR: f32 = 28.0;
 
-struct Folio {
+struct Text9000 {
     ctx: egui::Context,
     icon: egui::IconData,
     editor: Editor,
@@ -138,7 +139,7 @@ struct Folio {
     appearance_for: Option<egui::Color32>,
 }
 
-impl Folio {
+impl Text9000 {
     fn new(egui_ctx: &egui::Context, path: Option<PathBuf>, icon: egui::IconData, state: state::State) -> Self {
         settings::write_examples();
         links::install(egui_ctx);
@@ -204,12 +205,15 @@ impl Folio {
             appearance_for: None,
         };
         app.load_config(true);
+        if let Some(from) = platform::ADOPTED.get() {
+            app.notice = Some((format!("Welcome to text9000. Your Folio settings came along from {}", platform::hide_home(&from.display().to_string())), 0.0));
+        }
         if let Some(p) = path {
-            app.open_path(p);
+            app.open_file(p, 0.0);
         }
         if let Some(crash) = log::last_crash() {
-            log::push("Folio", log::Level::Error, format!("Folio ran into a bug last time:\n{crash}"));
-            app.error = Some("Folio ran into a bug last time. Help → Report a Problem sends us the details.".into());
+            log::push("text9000", log::Level::Error, format!("text9000 ran into a bug last time:\n{crash}"));
+            app.error = Some("text9000 ran into a bug last time. Help → Report a Problem sends us the details.".into());
         }
         if let Some(problem) = platform::dialog_problem() {
             app.error = Some(problem);
@@ -361,13 +365,18 @@ impl Folio {
                 .collect(),
             plugins: self.plugins.commands(),
             scripts: self.scripts.menu_items(),
+            apps: series::SIBLINGS
+                .iter()
+                .filter(|s| series::find(s, self.settings.apps.get(s.name).map(String::as_str)).is_some())
+                .map(|s| s.name.to_owned())
+                .collect(),
             recent: self.state.recent.clone(),
             keymap: &self.keymap,
         };
         self.menu = Some(MenuBar::install(&self.ctx, &self.icon, &content));
     }
 
-    /// Writes a setting back to settings.toml so Folio remembers it.
+    /// Writes a setting back to settings.toml so text9000 remembers it.
     fn persist(&mut self, write: impl FnOnce() -> Result<(), String>) {
         if let Err(e) = write() {
             self.error = Some(e);
@@ -410,7 +419,7 @@ impl Folio {
                 self.versions_stale = true;
                 self.adapters.emit("opened", json!({ "path": path }));
                 self.remember(&path);
-                log::push("Folio", log::Level::Info, format!("Opened {}", path.display()));
+                log::push("text9000", log::Level::Info, format!("Opened {}", path.display()));
                 self.path = Some(path);
                 self.error = None;
             }
@@ -481,8 +490,9 @@ impl Folio {
         let path = match (&self.path, choose) {
             (Some(p), false) => p.clone(),
             _ => match FileDialog::new()
-                .add_filter("Folio document", &["folio"])
-                .set_file_name("Untitled.folio")
+                .add_filter("text9000 document", &[series::EXTENSION])
+                .add_filter("Folio document", &[series::FOLIO_EXTENSION])
+                .set_file_name(format!("Untitled.{}", series::EXTENSION))
                 .save_file()
             {
                 Some(p) => p,
@@ -552,7 +562,7 @@ impl Folio {
         }
     }
 
-    /// Offers back work left behind when Folio didn't quit cleanly.
+    /// Offers back work left behind when text9000 didn't quit cleanly.
     fn offer_recovery(&mut self) {
         let Some((file, record)) = safety::orphaned_recoveries().into_iter().next() else { return };
         let restore = dialog::ask("Restore unsaved work?", &record.describe(), MessageButtons::YesNo)
@@ -645,6 +655,11 @@ impl Folio {
                 self.lua_result(ran);
                 self.editor.reset_caret(now);
             }
+            Command::App(name) => {
+                if let Some(sibling) = series::sibling(&name) {
+                    self.hand_off(sibling, None, now);
+                }
+            }
             Command::OpenFile(path) => {
                 if self.confirm_discard() {
                     self.open_path(path);
@@ -679,10 +694,13 @@ impl Folio {
                 }
             }
             Builtin::Open => {
-                if self.confirm_discard()
-                    && let Some(p) = FileDialog::new().add_filter("Folio document", &["folio"]).pick_file()
+                let media: Vec<&str> = series::SIBLINGS.iter().flat_map(|s| s.extensions.iter().copied()).collect();
+                if let Some(p) = FileDialog::new()
+                    .add_filter("text9000 or Folio document", &[series::EXTENSION, series::FOLIO_EXTENSION])
+                    .add_filter("Video, sound or photo (opens in its 9000 app)", &media)
+                    .pick_file()
                 {
-                    self.open_path(p);
+                    self.open_file(p, now);
                 }
             }
             Builtin::Save => {
@@ -736,7 +754,7 @@ impl Folio {
             }
             Builtin::TogglePanels => {
                 if self.settings.panels.is_empty() {
-                    self.notice = Some(("No panels yet. Add [[panels]] to settings.toml (Folio → Open Config Folder)".into(), now));
+                    self.notice = Some(("No panels yet. Add [[panels]] to settings.toml (text9000 → Open Config Folder)".into(), now));
                     return;
                 }
                 self.settings.show_panels = !self.settings.show_panels;
@@ -744,7 +762,7 @@ impl Folio {
                 self.persist(|| settings::save_value("show_panels", on));
             }
             Builtin::Help => self.show_help = !self.show_help,
-            // The guide is the README; the browser loads it, not Folio.
+            // The guide is the README; the browser loads it, not text9000.
             Builtin::Guide => {
                 if let Err(e) = platform::open(GUIDE_URL.as_ref()) {
                     self.error = Some(format!("Couldn't open the guide ({GUIDE_URL}): {e}"));
@@ -786,6 +804,7 @@ impl Folio {
                 self.open_external(dir.as_os_str());
             }
             Builtin::Adapters => self.show_adapters = true,
+            Builtin::LinkFile => self.link_file(now),
         }
     }
 
@@ -826,7 +845,7 @@ impl Folio {
     }
 
     /// Opens a folder in the file browser or a link in the web browser
-    /// (Folio itself doesn't connect anywhere).
+    /// (text9000 itself doesn't connect anywhere).
     fn open_external(&mut self, target: &std::ffi::OsStr) {
         if let Err(e) = platform::open(target) {
             self.error = Some(format!("Couldn't open it: {e}"));
@@ -840,18 +859,11 @@ impl Folio {
         self.rebuild_keys();
     }
 
-    /// Documents and folio:// links the system asked Folio to open.
+    /// Documents and folio:// links the system asked text9000 to open.
     fn open_incoming(&mut self, now: f64) {
         for item in links::take() {
             match &item {
-                links::Incoming::File(path) => {
-                    let is_addon = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) || path.is_dir();
-                    if is_addon {
-                        self.add_adapter(path, now);
-                    } else if self.confirm_discard() {
-                        self.open_path(path.clone());
-                    }
-                }
+                links::Incoming::File(path) => self.open_file(path.clone(), now),
                 links::Incoming::Link { kind, .. } => match self.adapters.link_handler(kind) {
                     Some((adapter, command)) => {
                         if let Err(e) = self.adapters.run_command_with(&adapter, &command, item.url().as_deref()) {
@@ -860,7 +872,7 @@ impl Folio {
                     }
                     None if kind == "join" => {
                         self.error = Some(
-                            "This is a Folio Link invite. Add the Folio Link adapter (Folio → Adapters… → Browse Adapters) \
+                            "This is a Folio Link invite. Add the Folio Link adapter (text9000 → Adapters… → Browse Adapters) \
                              and open the link again."
                                 .into(),
                         )
@@ -876,12 +888,7 @@ impl Folio {
     fn dropped_files(&mut self, ctx: &egui::Context, now: f64) {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for path in dropped.into_iter().filter(|p| !p.as_os_str().is_empty()) {
-            let is_zip = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
-            if is_zip || path.is_dir() {
-                self.add_adapter(&path, now);
-            } else if self.confirm_discard() {
-                self.open_path(path);
-            }
+            self.open_file(path, now);
         }
         if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
             let colors = &self.themes[self.theme].colors;
@@ -893,7 +900,7 @@ impl Folio {
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                "Drop a document to open it, or an adapter's .zip to add it",
+                "Drop a document to open it, an adapter's .zip to add it, or media to open it in its 9000 app",
                 FontId::proportional(18.0),
                 fg,
             );
@@ -1022,7 +1029,7 @@ impl Folio {
 
     fn remove_adapter(&mut self, i: usize, now: f64) {
         let name = self.adapters.all[i].manifest.name.clone();
-        let text = format!("Remove “{name}”? It moves to {}, and Folio forgets that you allowed it.", platform::TRASH);
+        let text = format!("Remove “{name}”? It moves to {}, and text9000 forgets that you allowed it.", platform::TRASH);
         let ok = dialog::ask("Remove adapter?", &text, MessageButtons::OkCancel) == MessageDialogResult::Ok;
         if !ok {
             return;
@@ -1167,7 +1174,7 @@ impl Folio {
                 Some(id) => self.adapters.reply(adapter, id, result),
                 None => {
                     if let Err(e) = result {
-                        eprintln!("folio: adapter message failed: {e}");
+                        eprintln!("text9000: adapter message failed: {e}");
                     }
                 }
             }
@@ -1206,7 +1213,7 @@ impl Folio {
         }
     }
 
-    /// What a bug report needs to know about this Folio, for Copy Debug
+    /// What a bug report needs to know about this text9000, for Copy Debug
     /// Info. Never any document text.
     fn debug_info(&self) -> String {
         let mut out = vec![
@@ -1246,12 +1253,79 @@ impl Folio {
 
     /// Opens a link from the document. Only web and mail links: a shared
     /// document shouldn't be able to start programs or open local files.
+    /// A link to a video, sound, photo or 9000 project opens in its sister
+    /// app; nothing else local is opened.
     fn open_link(&mut self, url: &str, now: f64) {
         let lower = url.to_lowercase();
         if ["https://", "http://", "mailto:"].iter().any(|s| lower.starts_with(s)) {
             self.open_external(url.as_ref());
-        } else {
-            self.notice = Some((format!("Folio only opens web and mail links, not {url}"), now));
+            return;
+        }
+        let target = series::link_target(url, self.path.as_deref());
+        match target.as_deref().and_then(|p| Some((series::for_file(p)?, p))) {
+            Some((sibling, path)) if path.exists() => self.hand_off(sibling, Some(path), now),
+            Some((_, path)) => self.error = Some(format!("The linked file isn't there: {}", path.display())),
+            None => {
+                self.notice = Some((
+                    format!("text9000 opens web and mail links, and video, sound and photos in the 9000 apps, not {url}"),
+                    now,
+                ))
+            }
+        }
+    }
+
+    /// Links the selection (or, with none, the file's name, typed at the
+    /// caret) to a file chosen in a dialog. Clicking the link with Cmd (Ctrl)
+    /// opens it in its 9000 app. The link is relative to the document's
+    /// folder when the file is inside it, so they can move together.
+    fn link_file(&mut self, now: f64) {
+        let mut dialog = FileDialog::new().set_title("Link to a File");
+        if let Some(dir) = self.path.as_deref().and_then(|p| p.parent()) {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(file) = dialog.pick_file() else { return };
+        let url = series::link_for(&file, self.path.as_deref());
+        let range = match self.editor.selection_range() {
+            Some(range) => range,
+            None => {
+                let start = self.editor.cursor();
+                let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                self.editor.insert_at_cursor(&name, &self.themes[self.theme]);
+                (start, self.editor.cursor())
+            }
+        };
+        match self.editor.set_link(Some(&url), Some(range)) {
+            Ok(()) if series::for_file(&file).is_none() => {
+                self.notice = Some(("Linked. Only videos, sound, photos and 9000 projects open from a link".into(), now))
+            }
+            Ok(()) => {}
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Opens a 9000-series app, with a file if given.
+    fn hand_off(&mut self, sibling: &series::Sibling, file: Option<&std::path::Path>, now: f64) {
+        match series::open(sibling, file, self.settings.apps.get(sibling.name).map(String::as_str)) {
+            Ok(()) => {
+                let what = file.and_then(|f| f.file_name()).map(|n| format!("{} in ", n.to_string_lossy())).unwrap_or_default();
+                self.notice = Some((format!("Opened {what}{}", sibling.name), now));
+                log::push("text9000", log::Level::Info, format!("Opened {what}{}", sibling.name));
+            }
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Opens whatever file was asked for: an add-on is installed, a video,
+    /// sound or photo goes to its 9000 app, and anything else is opened as a
+    /// document (after asking about unsaved changes).
+    fn open_file(&mut self, path: PathBuf, now: f64) {
+        let is_addon = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) || path.is_dir();
+        if is_addon {
+            self.add_adapter(&path, now);
+        } else if let Some(sibling) = series::for_file(&path).filter(|_| !series::is_document(&path)) {
+            self.hand_off(sibling, Some(&path), now);
+        } else if self.confirm_discard() {
+            self.open_path(path);
         }
     }
 
@@ -1260,7 +1334,7 @@ impl Folio {
     fn prompt_window(&mut self, ctx: &egui::Context) {
         let Some(prompt) = &mut self.prompt else { return };
         let mut answer: Option<Value> = None;
-        egui::Window::new(if prompt.title.is_empty() { "Folio" } else { prompt.title.as_str() })
+        egui::Window::new(if prompt.title.is_empty() { series::NAME } else { prompt.title.as_str() })
             .collapsible(false)
             .resizable(false)
             .anchor(Align2::CENTER_TOP, egui::vec2(0.0, 120.0))
@@ -1443,17 +1517,15 @@ impl Folio {
     /// the transparent titlebar, which also moves the window; on Windows and
     /// Linux, below the system's own titlebar, the menus.
     fn titlebar(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
-        let colors = &self.themes[self.theme].colors;
-        let bg = color(&colors.background);
+        let pal = series::PALETTE;
+        let painter = ui.painter().clone();
+        painter.rect_filled(rect, 0.0, pal.header);
+        painter.rect_filled(egui::Rect::from_x_y_ranges(rect.x_range(), rect.bottom() - 1.0..=rect.bottom()), 0.0, pal.line);
         if cfg!(target_os = "macos") {
-            ui.painter().rect_filled(rect, 0.0, bg);
-            ui.painter().text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                &self.title,
-                FontId::proportional(13.0),
-                color(&colors.status),
-            );
+            // The mark and name after the traffic lights, the document in
+            // the middle, as across the 9000 series.
+            series::wordmark(&painter, egui::pos2(rect.left() + 84.0, rect.center().y), &pal);
+            painter.text(rect.center(), Align2::CENTER_CENTER, &self.title, FontId::proportional(12.0), pal.weak);
 
             let response = ui.interact(rect, egui::Id::unique("titlebar"), Sense::click_and_drag());
             if response.double_clicked() {
@@ -1462,17 +1534,21 @@ impl Folio {
             } else if response.drag_started() {
                 ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
             }
-        } else if let Some(menu) = &mut self.menu {
-            menu.show(ui, rect, &self.themes[self.theme]);
+        } else {
+            // Menus on the left, the mark and name at the right end.
+            if let Some(menu) = &mut self.menu {
+                menu.show(ui, rect, &pal);
+            }
+            let galley_w = 24.0 + 30.0 + 34.0;
+            series::wordmark(&painter, egui::pos2(rect.right() - galley_w - 12.0, rect.center().y), &pal);
         }
 
-        // Match the system UI (traffic lights, a dark titlebar) to the theme.
-        if self.appearance_for != Some(bg) {
-            let [r, g, b, _] = bg.to_array();
-            let luma = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
-            let system = if luma < 128.0 { SystemTheme::Dark } else { SystemTheme::Light };
-            ui.ctx().send_viewport_cmd(ViewportCommand::SetTheme(system));
-            self.appearance_for = Some(bg);
+        // The system's own parts (traffic lights, the title bar) match the
+        // graphite strip.
+        if self.appearance_for.is_none() {
+            ui.ctx().send_viewport_cmd(ViewportCommand::SetTheme(SystemTheme::Dark));
+            ui.ctx().set_visuals(pal.visuals());
+            self.appearance_for = Some(pal.header);
         }
     }
 
@@ -1481,7 +1557,7 @@ impl Folio {
         let mut restore = None;
         egui::Window::new("Versions").open(&mut open).default_width(320.0).show(ctx, |ui| {
             if self.editor.doc.id.is_none() || self.versions.is_empty() {
-                ui.label("Folio keeps a version each time you save this document.");
+                ui.label("text9000 keeps a version each time you save this document.");
                 return;
             }
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
@@ -1556,7 +1632,7 @@ impl Folio {
             if !unbound.is_empty() {
                 text += &format!("\nNo key yet (Scripts menu): {}\n", unbound.join(", "));
             }
-            text += "\nRemap any of these in keys.toml (Folio → Open Config Folder)";
+            text += "\nRemap any of these in keys.toml (text9000 → Open Config Folder)";
             let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), egui::Color32::WHITE);
             let box_rect = egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(36.0, 30.0));
             painter.rect_filled(box_rect, 8.0, egui::Color32::from_black_alpha(225));
@@ -1565,7 +1641,7 @@ impl Folio {
     }
 }
 
-impl shell::App for Folio {
+impl shell::App for Text9000 {
     /// Caps egui's textures at about 2048 pixels a side (see
     /// `trim_text_texture` for why it's sometimes 2047). The text texture
     /// holds every letter drawn, at every size, and tops out at 16 MB; egui
@@ -1692,14 +1768,14 @@ impl shell::App for Folio {
             }
         }
         if self.error.is_some() && self.error != self.logged_error {
-            log::push("Folio", log::Level::Error, self.error.clone().unwrap_or_default());
+            log::push("text9000", log::Level::Error, self.error.clone().unwrap_or_default());
         }
         self.logged_error = self.error.clone();
         if self.show_versions {
             self.versions_window(&ctx);
         }
         if self.show_adapters {
-            let actions = adapter_window::show(&ctx, &self.adapters, &self.themes[self.theme], &self.keymap);
+            let actions = adapter_window::show(&ctx, &self.adapters, &self.keymap);
             for action in actions {
                 self.adapter_window_action(action, now);
             }
@@ -1742,13 +1818,13 @@ fn local_date_time() -> (String, String) {
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
-const GUIDE_URL: &str = "https://github.com/solacecasino/folio#readme";
-const REPORT_URL: &str = "https://github.com/solacecasino/folio/issues/new?template=bug.yml";
+const GUIDE_URL: &str = "https://github.com/solacecasino/text9000#readme";
+const REPORT_URL: &str = "https://github.com/solacecasino/text9000/issues/new?template=bug.yml";
 
 fn main() -> Result<(), String> {
     if std::env::args().nth(1).as_deref() == Some("--version") {
         // Release builds on Windows have no console of their own; print to
-        // the terminal Folio was started from. (Redirected output already works.)
+        // the terminal text9000 was started from. (Redirected output already works.)
         #[cfg(windows)]
         // SAFETY: attaching to the parent's console has no preconditions.
         unsafe {
@@ -1759,16 +1835,23 @@ fn main() -> Result<(), String> {
         return Ok(());
     }
     if let Some(problem) = platform::missing_system_library() {
-        eprintln!("folio: {problem}");
+        eprintln!("text9000: {problem}");
         // Started from a menu there's no terminal to read; try a dialog.
-        let _ = std::process::Command::new("zenity").args(["--error", "--title=Folio", "--text", &problem]).status();
+        let _ = std::process::Command::new("zenity").args(["--error", "--title=text9000", "--text", &problem]).status();
         std::process::exit(1);
+    }
+    // Folio users keep everything: settings, keys, themes, adapters, versions.
+    if series::env("CONFIG_DIR").is_none()
+        && let Some(from) = platform::adopt_folio_config(&platform::default_config_dir(), &platform::folio_config_dir())
+    {
+        log::push("text9000", log::Level::Info, format!("Copied Folio's settings from {}", platform::hide_home(&from.display().to_string())));
+        let _ = platform::ADOPTED.set(from);
     }
     log::catch_crashes();
     links::listen_early();
     // A document to open, or a folio:// link (queued until the app is up).
     let path = match std::env::args_os().nth(1) {
-        Some(arg) if arg.to_string_lossy().starts_with("folio://") => {
+        Some(arg) if ["folio://", "text9000://"].iter().any(|s| arg.to_string_lossy().starts_with(s)) => {
             links::deliver(links::parse(&arg.to_string_lossy()));
             None
         }
@@ -1777,9 +1860,8 @@ fn main() -> Result<(), String> {
     let icon = shell::icon_from_png(ICON_PNG).expect("bundled icon is a valid PNG");
     let state = state::State::load();
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Folio")
-        // The window class Folio 1.x had: window rules and scripts match it.
-        .with_app_id("Folio")
+        .with_title(series::NAME)
+        .with_app_id(series::NAME)
         .with_icon(icon.clone())
         .with_inner_size([1000.0, 1100.0]);
     if let Some(w) = state.window {
@@ -1790,5 +1872,5 @@ fn main() -> Result<(), String> {
         .with_fullsize_content_view(true)
         .with_titlebar_shown(false)
         .with_title_shown(false);
-    shell::run(viewport, move |ctx| Folio::new(ctx, path, icon, state))
+    shell::run(viewport, move |ctx| Text9000::new(ctx, path, icon, state))
 }

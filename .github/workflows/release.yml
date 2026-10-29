@@ -1,4 +1,4 @@
-# Builds and tests Folio on macOS, Windows and Linux. Pushing a tag like
+# Builds and tests text9000 on macOS, Windows and Linux. Pushing a tag like
 # v0.6.0 also publishes a GitHub release with all three downloads, using
 # docs/releases/<tag>.md as the notes. Run it by hand (Actions → Release →
 # Run workflow) to get the downloads as artifacts without releasing.
@@ -52,7 +52,7 @@ jobs:
           UNIVERSAL: "1"   # only read on macOS
         run: |
           python scripts/package.py
-          python scripts/package.py --lite   # folio-lite: no plugin runtime
+          python scripts/package.py --lite   # text9000 Lite: no plugin runtime
 
       - name: Check that the downloads start
         shell: bash
@@ -65,20 +65,20 @@ jobs:
               *.zip) python -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall('x-' + sys.argv[1])" "$f" ;;
             esac
           done
-          for exe in $(find . -path ./x-\*/Folio.app/Contents/MacOS/folio -o -name folio.exe -o -type f -name folio -perm -u+x); do
+          for exe in $(find . -path ./x-\*/text9000.app/Contents/MacOS/text9000 -o -name text9000.exe -o -type f -name text9000 -perm -u+x); do
             chmod +x "$exe" 2>/dev/null || true
             echo "$exe: $("$exe" --version)"
           done
-          for app in x-*/Folio.app/Contents/MacOS/folio; do
+          for app in x-*/text9000.app/Contents/MacOS/text9000; do
             [ -e "$app" ] || continue
             archs=$(lipo -archs "$app"); echo "$app: $archs"
             case "$archs" in *x86_64*arm64*|*arm64*x86_64*) ;; *) echo "not universal"; exit 1 ;; esac
           done
-          rm -rf x-* folio-*-linux-x64/ folio-lite-*-linux-x64/
+          rm -rf x-* text9000-*-linux-x64/
 
       - uses: actions/upload-artifact@v7
         with:
-          name: folio-${{ runner.os }}
+          name: text9000-${{ runner.os }}
           path: dist/*
           if-no-files-found: error
 
@@ -96,7 +96,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
-          pattern: folio-*   # the downloads, not the screenshots
+          pattern: text9000-*   # the downloads, not the screenshots
           merge-multiple: true
       - name: Publish
         env:
@@ -105,4 +105,4 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           notes="docs/releases/${tag}.md"
           if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
-          gh release create "$tag" dist/* --title "Folio ${tag#v}" "$@"
+          gh release create "$tag" dist/* --title "text9000 ${tag#v}" "$@"

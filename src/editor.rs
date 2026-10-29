@@ -401,7 +401,7 @@ impl Editor {
     }
 
     /// Copies the selection: plain text for other apps, and the formatted
-    /// copy for pasting back into Folio. False when nothing was selected.
+    /// copy for pasting back into text9000. False when nothing was selected.
     fn copy(&self, ui: &Ui) -> bool {
         let Some((a, b)) = self.selection() else { return false };
         let text = self.doc.text(a, b);
@@ -410,7 +410,7 @@ impl Editor {
         true
     }
 
-    /// Pastes text copied in Folio with its formatting, as one undo step.
+    /// Pastes text copied in text9000 with its formatting, as one undo step.
     fn paste_fragment(&mut self, fragment: &Document) {
         self.checkpoint(EditKind::Other);
         self.delete_selection();

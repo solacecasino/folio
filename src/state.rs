@@ -1,4 +1,4 @@
-//! What Folio remembers between runs that isn't a preference: the window's
+//! What text9000 remembers between runs that isn't a preference: the window's
 //! size and place, and recently opened documents. Kept in `state.json` in
 //! the config folder, apart from the settings people edit by hand.
 

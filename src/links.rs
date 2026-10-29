@@ -1,8 +1,8 @@
-//! Documents and `folio://` links the system asks Folio to open.
+//! Documents and `folio://` links the system asks text9000 to open.
 //!
 //! - On Windows and Linux they arrive as the program's argument
 //!   (`folio "folio://join#…"` or `folio essay.folio`), from the file and
-//!   link associations Folio sets up (Windows) or `install.sh` installs
+//!   link associations text9000 sets up (Windows) or `install.sh` installs
 //!   (Linux).
 //! - On macOS they arrive as Apple Events: Finder's "open documents" and
 //!   the "get URL" event for links. Info.plist declares the `folio` scheme
@@ -17,13 +17,14 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Incoming {
     File(PathBuf),
-    /// A `folio://` link: its kind ("join") and everything after it.
+    /// A `text9000://` or `folio://` link: its kind ("join") and everything
+    /// after it.
     Link { kind: String, rest: String },
 }
 
 /// Reads one command-line argument or URL.
 pub fn parse(arg: &str) -> Incoming {
-    match arg.strip_prefix("folio://") {
+    match arg.strip_prefix("text9000://").or_else(|| arg.strip_prefix("folio://")) {
         Some(link) => {
             let end = link.find(['/', '#', '?']).unwrap_or(link.len());
             let (kind, rest) = link.split_at(end);
@@ -37,7 +38,8 @@ pub fn parse(arg: &str) -> Incoming {
 }
 
 impl Incoming {
-    /// The whole link again, as adapters expect it.
+    /// The whole link again, as adapters expect it: adapters written for
+    /// text9000 know `folio://`, so links are passed on in that form.
     pub fn url(&self) -> Option<String> {
         match self {
             Incoming::Link { kind, rest } => Some(format!("folio://{kind}#{rest}")),
@@ -63,7 +65,7 @@ pub fn take() -> Vec<Incoming> {
 }
 
 /// Listens for macOS's open-document and link events from the start, so the
-/// ones that launch Folio aren't missed. Call before the app starts.
+/// ones that launch text9000 aren't missed. Call before the app starts.
 pub fn listen_early() {
     #[cfg(target_os = "macos")]
     {
@@ -74,7 +76,7 @@ pub fn listen_early() {
 
 /// Starts listening (macOS, again, in case starting the app replaced the
 /// early handlers) and keeps the system's file and link associations
-/// pointing at this copy of Folio (Windows).
+/// pointing at this copy of text9000 (Windows).
 pub fn install(ctx: &egui::Context) {
     let _ = CTX.set(ctx.clone());
     #[cfg(target_os = "macos")]
@@ -102,7 +104,7 @@ mod mac {
         // SAFETY: NSObject has no subclassing requirements, and this class
         // doesn't implement Drop.
         #[unsafe(super(NSObject))]
-        #[name = "FolioAppleEventHandler"]
+        #[name = "Text9000AppleEventHandler"]
         struct Handler;
 
         impl Handler {
@@ -139,7 +141,7 @@ mod mac {
     );
 
     /// `application:openURLs:`, which Cocoa calls on the app delegate for
-    /// documents opened from Finder, including the one that launches Folio.
+    /// documents opened from Finder, including the one that launches text9000.
     /// The delegate belongs to the windowing library and has no such method,
     /// so it's added to NSObject (which every delegate inherits from) before
     /// the app starts. Only app delegates are asked for this selector.
@@ -190,20 +192,24 @@ mod mac {
 mod windows {
     use std::process::Command;
 
-    /// Points `.folio` files and `folio://` links at this folio.exe, for this
-    /// user only (no administrator needed). Run each launch, so moving
-    /// Folio's folder keeps working.
+    /// Points `.t9k` and `.folio` files and `text9000://` and `folio://`
+    /// links at this text9000.exe, for this user only (no administrator
+    /// needed). Run each launch, so moving text9000's folder keeps working.
     pub fn register() {
         let Ok(exe) = std::env::current_exe() else { return };
         let open = format!("\"{}\" \"%1\"", exe.display());
         let icon = format!("{},0", exe.display());
-        let keys: [(&str, Option<&str>, &str); 6] = [
+        let keys: [(&str, Option<&str>, &str); 10] = [
+            (r"HKCU\Software\Classes\text9000", None, "URL:text9000 link"),
+            (r"HKCU\Software\Classes\text9000", Some("URL Protocol"), ""),
+            (r"HKCU\Software\Classes\text9000\shell\open\command", None, &open),
             (r"HKCU\Software\Classes\folio", None, "URL:Folio link"),
             (r"HKCU\Software\Classes\folio", Some("URL Protocol"), ""),
             (r"HKCU\Software\Classes\folio\shell\open\command", None, &open),
-            (r"HKCU\Software\Classes\.folio", None, "Folio.Document"),
-            (r"HKCU\Software\Classes\Folio.Document\shell\open\command", None, &open),
-            (r"HKCU\Software\Classes\Folio.Document\DefaultIcon", None, &icon),
+            (r"HKCU\Software\Classes\.t9k", None, "text9000.Document"),
+            (r"HKCU\Software\Classes\.folio", None, "text9000.Document"),
+            (r"HKCU\Software\Classes\text9000.Document\shell\open\command", None, &open),
+            (r"HKCU\Software\Classes\text9000.Document\DefaultIcon", None, &icon),
         ];
         for (key, name, value) in keys {
             let mut reg = Command::new("reg");
@@ -238,5 +244,7 @@ mod tests {
         );
         assert_eq!(parse("/docs/essay.folio"), Incoming::File("/docs/essay.folio".into()));
         assert_eq!(parse("folio://join"), Incoming::Link { kind: "join".into(), rest: String::new() });
+        assert_eq!(parse("text9000://join#abc").url().as_deref(), Some("folio://join#abc"));
+        assert_eq!(parse("/docs/notes.t9k"), Incoming::File("/docs/notes.t9k".into()));
     }
 }

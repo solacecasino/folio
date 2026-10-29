@@ -1,8 +1,8 @@
 //! Themes are plain TOML files. Each one sets the page, colors, fonts and
 //! paragraph styles; nothing about a document's look is hardcoded.
 //!
-//! Folio looks for themes inside Folio.app, in `./themes`, and in
-//! `~/Library/Application Support/Folio/themes` (the user's own folder).
+//! text9000 looks for themes inside text9000.app, in `./themes`, and in
+//! `~/Library/Application Support/text9000/themes` (the user's own folder).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -366,7 +366,7 @@ pub const DEFAULT_THEME: &str = include_str!("../themes/paper.toml");
 
 pub fn load_themes() -> Vec<Theme> {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    // Inside Folio.app the bundled themes live in Contents/Resources; on
+    // Inside text9000.app the bundled themes live in Contents/Resources; on
     // Windows and Linux they sit next to the program, or in share/folio
     // when installed under ~/.local or /usr.
     if let Ok(exe) = std::env::current_exe()
@@ -374,6 +374,7 @@ pub fn load_themes() -> Vec<Theme> {
     {
         dirs.push(exe_dir.join("../Resources/themes"));
         dirs.push(exe_dir.join("themes"));
+        dirs.push(exe_dir.join("../share/text9000/themes"));
         dirs.push(exe_dir.join("../share/folio/themes"));
     }
     dirs.push(PathBuf::from("themes"));
@@ -397,7 +398,7 @@ pub fn load_themes() -> Vec<Theme> {
                     themes.retain(|existing| existing.name != t.name);
                     themes.push(t);
                 }
-                Err(e) => eprintln!("folio: skipping theme {}: {e}", path.display()),
+                Err(e) => eprintln!("text9000: skipping theme {}: {e}", path.display()),
             }
         }
     }
@@ -484,7 +485,7 @@ impl FontMap {
 /// can't be mapped.
 fn font_data(path: &std::path::Path) -> Option<FontData> {
     let file = std::fs::File::open(path).ok()?;
-    // SAFETY: font files aren't changed while Folio runs; if one were
+    // SAFETY: font files aren't changed while text9000 runs; if one were
     // replaced in place, reading it could fault, as with any mapped file.
     match unsafe { memmap2::Mmap::map(&file) } {
         Ok(map) => Some(FontData::from_blob(std::sync::Arc::new(map), 0)),
@@ -492,7 +493,7 @@ fn font_data(path: &std::path::Path) -> Option<FontData> {
     }
 }
 
-/// Registers the fonts of `themes` with egui (Folio passes just the current
+/// Registers the fonts of `themes` with egui (text9000 passes just the current
 /// theme), plus the system's symbol fonts as fallbacks.
 pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
     let mut defs = FontDefinitions::default();
@@ -520,7 +521,7 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
             for (bold, italic, file) in variants {
                 let Some(file) = file else { continue };
                 let Some(path) = theme.find_font(file) else {
-                    eprintln!("folio: {}: font not found: {}", theme.name, file.candidates().join(", "));
+                    eprintln!("text9000: {}: font not found: {}", theme.name, file.candidates().join(", "));
                     continue;
                 };
                 let font_path = path.clone();
@@ -528,7 +529,7 @@ pub fn install_fonts(ctx: &egui::Context, themes: &[Theme]) -> FontMap {
                     Some(k) => k.clone(),
                     None => {
                         let Some(data) = font_data(&path) else {
-                            eprintln!("folio: couldn't read font {}", path.display());
+                            eprintln!("text9000: couldn't read font {}", path.display());
                             continue;
                         };
                         let k = format!("file:{}", path.display());
