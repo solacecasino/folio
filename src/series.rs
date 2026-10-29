@@ -309,7 +309,12 @@ pub fn link_target(url: &str, document: Option<&Path>) -> Option<PathBuf> {
         return None;
     }
     let path = match url.strip_prefix("file://") {
-        Some(rest) => PathBuf::from(percent_decode(rest)),
+        Some(rest) => {
+            let rest = percent_decode(rest);
+            // file:///C:/Users/... on Windows: the path starts at the drive.
+            let drive = rest.len() > 2 && rest.as_bytes()[0] == b'/' && rest.as_bytes()[2] == b':';
+            PathBuf::from(if cfg!(windows) && drive { &rest[1..] } else { &rest[..] })
+        }
         None => PathBuf::from(url),
     };
     if path.is_absolute() {
@@ -371,7 +376,11 @@ mod tests {
         let doc = Path::new("/notes/film/script.t9k");
         assert_eq!(link_target("shots/a.mov", Some(doc)), Some(PathBuf::from("/notes/film/shots/a.mov")));
         assert_eq!(link_target("file:///Users/me/My%20Take.wav", Some(doc)), Some(PathBuf::from("/Users/me/My Take.wav")));
-        assert_eq!(link_target("/abs/cover.png", None), Some(PathBuf::from("/abs/cover.png")));
+        let absolute = if cfg!(windows) { r"C:\abs\cover.png" } else { "/abs/cover.png" };
+        assert_eq!(link_target(absolute, None), Some(PathBuf::from(absolute)));
+        if cfg!(windows) {
+            assert_eq!(link_target("file:///C:/My%20Takes/a.wav", None), Some(PathBuf::from("C:/My Takes/a.wav")));
+        }
         assert_eq!(link_target("https://example.com/a.mov", Some(doc)), None);
         assert_eq!(link_target("relative.mov", None), None, "an unsaved document has no folder");
         assert_eq!(link_for(Path::new("/notes/film/shots/a.mov"), Some(doc)), "shots/a.mov");
