@@ -34,7 +34,9 @@ jobs:
           ./target/debug/text9000 --version
           ./target/debug/text9000 examples/welcome.folio &
           sleep 10
-          W=$(xdotool search --sync --class text9000 | head -1)
+          # Fails in a minute, not hours, if the window never appears.
+          W=$(timeout 60 xdotool search --sync --class text9000 | head -1)
+          [ -n "$W" ] || { echo "text9000 never opened a window"; exit 1; }
           xdotool windowactivate --sync "$W"
           shot() { import -window root "shots/$1.png"; }
           shot 1-start

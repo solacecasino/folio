@@ -381,7 +381,8 @@ fn mul(x: u32, a: u32) -> u32 {
 /// Premultiplied `src` over the pixel `dst`.
 #[inline(always)]
 fn over(dst: &mut u32, src: [u32; 4]) {
-    let a = src[3];
+    // Blending a triangle's corners can round a channel up to 256.
+    let a = src[3].min(255);
     if a == 0 && src[0] == 0 && src[1] == 0 && src[2] == 0 {
         return;
     }
@@ -615,7 +616,7 @@ fn draw_triangle(t: [&Vertex; 3], texture: &Texture, area: IRect, target: &mut T
         let cols = [rgba(p0.color), rgba(p1.color), rgba(p2.color)];
         for p in row {
             let (w0, w1, w2) = (w[0].max(0.0), w[1].max(0.0), w[2].max(0.0));
-            let ch = |i: usize| (w0 * cols[0][i] as f32 + w1 * cols[1][i] as f32 + w2 * cols[2][i] as f32 + 0.5) as u32;
+            let ch = |i: usize| ((w0 * cols[0][i] as f32 + w1 * cols[1][i] as f32 + w2 * cols[2][i] as f32 + 0.5) as u32).min(255);
             let color = [ch(0), ch(1), ch(2), ch(3)];
             let src = if flat_uv {
                 tint(texture.sample(p0.uv.x, p0.uv.y), color)
@@ -704,5 +705,10 @@ mod tests {
         let mut p = 0xff_ff_ff_ffu32;
         over(&mut p, [0, 0, 128, 128]);
         assert_eq!(p, 0xff_7f_7f_ff);
+        // A corner blend rounded past 255 is opaque, not a wrapped-around
+        // (in debug builds, panicking) subtraction.
+        let mut p = 0xff_00_00_00u32;
+        over(&mut p, [256, 10, 10, 256]);
+        assert_eq!(p, 0xff_ff_0a_0a);
     }
 }

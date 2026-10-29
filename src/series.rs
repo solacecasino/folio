@@ -117,6 +117,8 @@ pub struct Sibling {
     pub name: &'static str,
     /// What it does, for messages ("the video editor").
     pub kind: &'static str,
+    /// How macOS finds it.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub bundle_id: &'static str,
     /// Its own project files, then the media it opens.
     pub extensions: &'static [&'static str],
