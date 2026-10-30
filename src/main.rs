@@ -697,7 +697,7 @@ impl Text9000 {
                 let media: Vec<&str> = series::SIBLINGS.iter().flat_map(|s| s.extensions.iter().copied()).collect();
                 if let Some(p) = FileDialog::new()
                     .add_filter("text9000 or Folio document", &[series::EXTENSION, series::FOLIO_EXTENSION])
-                    .add_filter("Video, sound or photo (opens in its 9000 app)", &media)
+                    .add_filter("Video, sound, photo or comic (opens in its 9000 app)", &media)
                     .pick_file()
                 {
                     self.open_file(p, now);
@@ -1253,7 +1253,7 @@ impl Text9000 {
 
     /// Opens a link from the document. Only web and mail links: a shared
     /// document shouldn't be able to start programs or open local files.
-    /// A link to a video, sound, photo or 9000 project opens in its sister
+    /// A link to a video, sound, photo, comic or 9000 project opens in its sister
     /// app; nothing else local is opened.
     fn open_link(&mut self, url: &str, now: f64) {
         let lower = url.to_lowercase();
@@ -1267,7 +1267,7 @@ impl Text9000 {
             Some((_, path)) => self.error = Some(format!("The linked file isn't there: {}", path.display())),
             None => {
                 self.notice = Some((
-                    format!("text9000 opens web and mail links, and video, sound and photos in the 9000 apps, not {url}"),
+                    format!("text9000 opens web and mail links, and video, sound, photos and comics in the 9000 apps, not {url}"),
                     now,
                 ))
             }
@@ -1296,7 +1296,7 @@ impl Text9000 {
         };
         match self.editor.set_link(Some(&url), Some(range)) {
             Ok(()) if series::for_file(&file).is_none() => {
-                self.notice = Some(("Linked. Only videos, sound, photos and 9000 projects open from a link".into(), now))
+                self.notice = Some(("Linked. Only videos, sound, photos, comics and 9000 projects open from a link".into(), now))
             }
             Ok(()) => {}
             Err(e) => self.error = Some(e),
@@ -1316,7 +1316,7 @@ impl Text9000 {
     }
 
     /// Opens whatever file was asked for: an add-on is installed, a video,
-    /// sound or photo goes to its 9000 app, and anything else is opened as a
+    /// sound, photo or comic goes to its 9000 app, and anything else is opened as a
     /// document (after asking about unsaved changes).
     fn open_file(&mut self, path: PathBuf, now: f64) {
         let is_addon = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) || path.is_dir();

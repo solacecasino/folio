@@ -265,8 +265,8 @@ const EXAMPLE_SETTINGS: &str = r#"# text9000 settings. Everything here is option
 # smart_quotes = true      # "curly" quotes as you type
 # smart_dashes = true      # -- becomes — and ... becomes …
 
-# The other 9000-series apps: text9000 finds splice9000, wave9000 and
-# grace9000 by itself; name a path here only if it doesn't.
+# The other 9000-series apps: text9000 finds splice9000, wave9000,
+# grace9000 and leaf9000 by itself; name a path here only if it doesn't.
 # [apps]
 # splice9000 = "/path/to/splice9000"
 

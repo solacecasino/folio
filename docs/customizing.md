@@ -79,6 +79,7 @@ Windows), name it:
 splice9000 = "/path/to/splice9000"
 wave9000 = "/path/to/wave9000"
 grace9000 = "/path/to/grace9000"
+leaf9000 = "/path/to/leaf9000"
 ```
 
 ## keys.toml
@@ -111,7 +112,7 @@ menus show your shortcuts. `Cmd+/` lists every current binding.
 | `adapters` `open-adapters-folder` | The Adapters window (Cmd+Shift+A), the folder they're kept in |
 | `adapter "<Name>" <command-id>` | Run an adapter's command |
 | `lua <name>` | Run a command your `init.lua` registered |
-| `app <name>` | Open `splice9000`, `wave9000` or `grace9000` (the 9000 menu) |
+| `app <name>` | Open `splice9000`, `wave9000`, `grace9000` or `leaf9000` (the 9000 menu) |
 | `link-file` | Format → Link to a File…: links the selection to a file, which opens in its 9000 app |
 
 Themes add default `cmd+<digit>` shortcuts for styles with `key = <digit>`,

@@ -1,8 +1,9 @@
-//! text9000's place in the 9000 series: its own identity, and the three
-//! sister apps it hands work to. Opening a video, sound or photo (or a
-//! .splice, .wave or .grace project), dropping one on the window, or
-//! clicking a link to one in a document opens it in splice9000, wave9000 or
-//! grace9000, whichever is installed. text9000 itself never edits them.
+//! text9000's place in the 9000 series: its own identity, and the four
+//! sister apps it hands work to. Opening a video, sound, photo or comic (or
+//! a .splice, .wave or .grace project), dropping one on the window, or
+//! clicking a link to one in a document opens it in splice9000, wave9000,
+//! grace9000 or leaf9000, whichever is installed. text9000 itself never
+//! edits them.
 
 use std::path::{Path, PathBuf};
 
@@ -125,7 +126,7 @@ pub struct Sibling {
     pub repo: &'static str,
 }
 
-pub const SIBLINGS: [Sibling; 3] = [
+pub const SIBLINGS: [Sibling; 4] = [
     Sibling {
         name: "splice9000",
         kind: "video editor",
@@ -153,6 +154,13 @@ pub const SIBLINGS: [Sibling; 3] = [
             "cr2", "cr3", "nef", "nrw", "arw", "srf", "sr2", "raf", "orf", "rw2", "pef", "srw", "3fr", "iiq", "x3f",
         ],
         repo: "https://github.com/solacecasino/grace9000",
+    },
+    Sibling {
+        name: "leaf9000",
+        kind: "comic reader",
+        bundle_id: "app.leaf9000.reader",
+        extensions: &["cbz", "cbr", "cb7", "cbt"],
+        repo: "https://github.com/solacecasino/leaf9000",
     },
 ];
 
@@ -365,6 +373,8 @@ mod tests {
         assert_eq!(name("song.flac"), Some("wave9000"));
         assert_eq!(name("IMG_0001.CR3"), Some("grace9000"));
         assert_eq!(name("look.grace"), Some("grace9000"));
+        assert_eq!(name("Vol 01.CBZ"), Some("leaf9000"));
+        assert_eq!(name("issue.cbr"), Some("leaf9000"));
         assert_eq!(name("notes.t9k"), None);
         assert_eq!(name("old.folio"), None);
         assert_eq!(name("README"), None);

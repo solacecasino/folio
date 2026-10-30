@@ -312,21 +312,23 @@ setups.
 
 ## The 9000 series
 
-text9000 is one of four apps built the same way: bare, modular, configured
+text9000 is one of five apps built the same way: bare, modular, configured
 with plain files. Its sisters are
 [splice9000](https://github.com/solacecasino/splice9000) (video),
-[wave9000](https://github.com/solacecasino/wave9000) (sound) and
-[grace9000](https://github.com/solacecasino/grace9000) (photos). text9000
-works with them directly:
+[wave9000](https://github.com/solacecasino/wave9000) (sound),
+[grace9000](https://github.com/solacecasino/grace9000) (photos) and
+[leaf9000](https://github.com/solacecasino/leaf9000) (comics and books).
+text9000 works with them directly:
 
-- **Open or drop** a video, a sound file or a photo, or a `.splice`, `.wave`
-  or `.grace` project, and it opens in the right sister app instead.
+- **Open or drop** a video, a sound file, a photo or a comic (`.cbz`,
+  `.cbr`, `.cb7`, `.cbt`), or a `.splice`, `.wave` or `.grace` project, and
+  it opens in the right sister app instead.
 - **Link to them.** **Format → Link to a File…** links the selection (or the
   file's name) to any file; `Cmd`-click the link and the file opens in its
   9000 app. A script or shot list can point at the edit, the takes and the
   stills. Links to files in the document's folder (or below it) are written
   relative to it, so the folder can be moved or shared as a whole.
-- **The 9000 menu** opens splice9000, wave9000 or grace9000. It shows only
+- **The 9000 menu** opens splice9000, wave9000, grace9000 or leaf9000. It shows only
   the ones that are installed. Bind one to a key with `app splice9000` in
   `keys.toml`.
 

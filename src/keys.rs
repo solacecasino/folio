@@ -144,7 +144,7 @@ pub fn parse_command(s: &str) -> Result<Option<Command>, String> {
         let name = name.trim();
         return match crate::series::sibling(name) {
             Some(app) => Ok(Some(Command::App(app.name.to_owned()))),
-            None => Err(format!("unknown app \"{name}\" (splice9000, wave9000 or grace9000)")),
+            None => Err(format!("unknown app \"{name}\" (splice9000, wave9000, grace9000 or leaf9000)")),
         };
     }
     // "component" is the older name for adapters and still works.
