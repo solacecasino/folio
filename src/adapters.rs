@@ -56,6 +56,9 @@ pub struct Manifest {
     /// Panels this adapter can fill; users place them in settings.toml.
     #[serde(default)]
     pub panels: Vec<PanelDecl>,
+    /// The 9000 sisters it works in; left out, any that installs it.
+    #[serde(default)]
+    pub apps: Vec<String>,
     /// `folio://` links this adapter opens: link kind → command id. The
     /// command gets the whole link as its `argument`.
     #[serde(default)]
@@ -295,18 +298,14 @@ impl Host {
 
         let permissions = c.manifest.permissions.clone();
         self.just_started = true;
+        // The 9000 series' family fields (app, version, "text9000",
+        // protocol, family, permissions, sisters), and "folio": the name
+        // adapters written for Folio look for.
+        let mut params = core9000::family::initialize(&permissions, &serde_json::Map::new());
+        params["folio"] = json!(env!("CARGO_PKG_VERSION"));
         self.send(
             i,
-            json!({
-                "method": "initialize",
-                "params": {
-                    // "folio" is the name adapters written for Folio look for.
-                    "folio": env!("CARGO_PKG_VERSION"),
-                    "text9000": env!("CARGO_PKG_VERSION"),
-                    "protocol": PROTOCOL_VERSION,
-                    "permissions": permissions,
-                },
-            }),
+            json!({ "method": "initialize", "params": params }),
         );
         Ok(())
     }
@@ -476,12 +475,21 @@ impl Host {
                             crate::log::Level::Info,
                             params.get("message").and_then(Value::as_str).unwrap_or_default(),
                         ),
-                        _ => calls.push(Call {
-                            adapter: i,
-                            id,
-                            method,
-                            params,
-                        }),
+                        // What every 9000 sister answers the same way
+                        // (`sisters.list`, `sister.open`), then text9000's own.
+                        other => match core9000::family::call(&self.all[i].manifest.name, other, &params) {
+                            Some(result) => {
+                                if let Some(id) = id {
+                                    self.reply(i, id, result);
+                                }
+                            }
+                            None => calls.push(Call {
+                                adapter: i,
+                                id,
+                                method,
+                                params,
+                            }),
+                        },
                     }
                 }
             }
@@ -634,7 +642,12 @@ fn load_manifest(folder: &Path) -> Result<Manifest, String> {
         .find(|p| p.exists())
         .ok_or("no adapter.toml")?;
     let src = std::fs::read_to_string(manifest).map_err(|e| e.to_string())?;
-    toml::from_str(&src).map_err(|e| e.to_string())
+    let m: Manifest = toml::from_str(&src).map_err(|e| e.to_string())?;
+    // An adapter made for other sisters says so (`apps`), and isn't run here.
+    if !m.apps.is_empty() && !m.apps.iter().any(|a| a.eq_ignore_ascii_case("text9000") || a.eq_ignore_ascii_case("folio")) {
+        return Err(format!("{} is an adapter for {}, not text9000.", m.name, m.apps.join(" and ")));
+    }
+    Ok(m)
 }
 
 // ---- Installing -------------------------------------------------------------
@@ -1116,6 +1129,7 @@ for line in sys.stdin:
             license: String::new(),
             description: String::new(),
             homepage: String::new(),
+            apps: Vec::new(),
             links: BTreeMap::new(),
             run: vec!["python3".into(), "fake.py".into()],
             permissions: vec![READ.into()],

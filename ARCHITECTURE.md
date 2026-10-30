@@ -163,10 +163,10 @@ Ctrl elsewhere, so a `keys.toml` is portable.
 text9000 1.x drew through eframe and the GPU (Metal, DirectX or Vulkan via
 wgpu). An empty window cost about 70 MB on a Retina Mac before any document
 was open: the graphics driver, plus two or three full-window buffers. text9000
-2 draws with the CPU instead (`src/shell`), at 37–44 MB for the whole app:
+2 draws with the CPU instead (`shell`, now in [core9000](https://github.com/solacecasino/core9000), shared by the 9000 series), at 37–44 MB for the whole app:
 
 - **Only what changed is drawn.** egui still describes each frame as shapes.
-  `shell/raster.rs` turns every shape into triangles on its own and
+  core9000's `shell/raster.rs` turns every shape into triangles on its own and
   fingerprints them. Shapes whose fingerprint was there last frame are left
   alone; only the 64-pixel screen tiles under shapes that appeared,
   disappeared or changed are cleared and drawn again. Typing a letter redraws

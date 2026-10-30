@@ -27,7 +27,8 @@ mod safety;
 mod scripts;
 mod settings;
 mod series;
-mod shell;
+// The 9000 series' shared core: the window, and the sisters.
+use core9000::shell;
 mod spell;
 mod state;
 mod theme;
@@ -365,8 +366,7 @@ impl Text9000 {
                 .collect(),
             plugins: self.plugins.commands(),
             scripts: self.scripts.menu_items(),
-            apps: series::SIBLINGS
-                .iter()
+            apps: series::siblings()
                 .filter(|s| series::find(s, self.settings.apps.get(s.name).map(String::as_str)).is_some())
                 .map(|s| s.name.to_owned())
                 .collect(),
@@ -694,7 +694,7 @@ impl Text9000 {
                 }
             }
             Builtin::Open => {
-                let media: Vec<&str> = series::SIBLINGS.iter().flat_map(|s| s.extensions.iter().copied()).collect();
+                let media: Vec<&str> = series::siblings().flat_map(|s| s.owns.iter().chain(s.opens).copied()).collect();
                 if let Some(p) = FileDialog::new()
                     .add_filter("text9000 or Folio document", &[series::EXTENSION, series::FOLIO_EXTENSION])
                     .add_filter("Video, sound, photo or comic (opens in its 9000 app)", &media)
@@ -1822,6 +1822,9 @@ const GUIDE_URL: &str = "https://github.com/solacecasino/text9000#readme";
 const REPORT_URL: &str = "https://github.com/solacecasino/text9000/issues/new?template=bug.yml";
 
 fn main() -> Result<(), String> {
+    core9000::init(&series::APP);
+    // The core's lines (the window's, the sisters') go in text9000's log.
+    core9000::log::set_sink(|error, text| log::push("text9000", if error { log::Level::Error } else { log::Level::Info }, text));
     if std::env::args().nth(1).as_deref() == Some("--version") {
         // Release builds on Windows have no console of their own; print to
         // the terminal text9000 was started from. (Redirected output already works.)
@@ -1857,7 +1860,7 @@ fn main() -> Result<(), String> {
         }
         arg => arg.map(PathBuf::from),
     };
-    let icon = shell::icon_from_png(ICON_PNG).expect("bundled icon is a valid PNG");
+    let icon = icon_from_png(ICON_PNG).expect("bundled icon is a valid PNG");
     let state = state::State::load();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(series::NAME)
@@ -1873,4 +1876,18 @@ fn main() -> Result<(), String> {
         .with_titlebar_shown(false)
         .with_title_shown(false);
     shell::run(viewport, move |ctx| Text9000::new(ctx, path, icon, state))
+}
+
+/// Decodes the bundled PNG icon.
+fn icon_from_png(bytes: &[u8]) -> Option<egui::IconData> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buf).ok()?;
+    if info.color_type != png::ColorType::Rgba {
+        return None;
+    }
+    buf.truncate(info.buffer_size());
+    Some(egui::IconData { rgba: buf, width: info.width, height: info.height })
 }

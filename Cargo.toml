@@ -13,11 +13,14 @@ default = ["wasi-plugins"]
 wasi-plugins = ["dep:folio_plugin"]
 
 [dependencies]
+# The 9000 series' shared core: the window, the family protocol and the
+# sisters.
+core9000 = { git = "https://github.com/solacecasino/core9000", tag = "v0.1.1" }
 memmap2 = "0.9.12"
 # init.lua scripting. Lua 5.4 is compiled in, so nothing extra is needed to run text9000.
 mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
 # The interface (egui), the window and input (winit, egui-winit), and the
-# pixels: drawn by the CPU (src/shell), so no graphics driver is loaded.
+# pixels: drawn by the CPU (core9000's shell), so no graphics driver is loaded.
 egui = { version = "0.37.0", features = ["default_fonts"] }
 egui-winit = { version = "0.37.0", default-features = false, features = [
     "accesskit", "clipboard", "links", "wayland", "x11",
