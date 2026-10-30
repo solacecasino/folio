@@ -3786,7 +3786,7 @@ dependencies = [
 
 [[package]]
 name = "text9000"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "accesskit_winit",
  "egui",

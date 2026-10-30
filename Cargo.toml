@@ -1,6 +1,6 @@
 [package]
 name = "text9000"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2024"
 description = "A document editor that ships bare and is endlessly customizable through themes and adapters."
 license = "MIT"
